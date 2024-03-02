@@ -5,7 +5,6 @@
 package fiber
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net"
-	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,20 +40,11 @@ type contextKey int
 const userContextKey contextKey = 0 // __local_user_context__
 
 type DefaultCtx struct {
-	app                 *App                 // Reference to *App
-	route               *Route               // Reference to *Route
+	app *App    // Reference to *App
+	req Request // Reference to *Request
+	// res				*Response // Reference to *Response
 	indexRoute          int                  // Index of the current route
 	indexHandler        int                  // Index of the current handler
-	method              string               // HTTP method
-	methodINT           int                  // HTTP method INT equivalent
-	baseURI             string               // HTTP base uri
-	path                string               // HTTP path with the modifications by the configuration -> string copy from pathBuffer
-	pathBuffer          []byte               // HTTP path buffer
-	detectionPath       string               // Route detection path                                  -> string copy from detectionPathBuffer
-	detectionPathBuffer []byte               // HTTP detectionPath buffer
-	treePath            string               // Path for the search in the tree
-	pathOriginal        string               // Original HTTP path
-	values              [maxParams]string    // Route parameter values
 	fasthttp            *fasthttp.RequestCtx // Reference to *fasthttp.RequestCtx
 	matched             bool                 // Non use route matched
 	viewBindMap         sync.Map             // Default view map to bind template engine
@@ -115,24 +104,24 @@ type ResFmt struct {
 	Handler   func(Ctx) error
 }
 
-// Accepts checks if the specified extensions or content types are acceptable.
+// Accepts is an alias of [Request.Accepts]
 func (c *DefaultCtx) Accepts(offers ...string) string {
-	return getOffer(c.fasthttp.Request.Header.Peek(HeaderAccept), acceptsOfferType, offers...)
+	return c.req.Accepts(offers...)
 }
 
-// AcceptsCharsets checks if the specified charset is acceptable.
+// AcceptsCharsets is an alias of [Request.AcceptsCharsets]
 func (c *DefaultCtx) AcceptsCharsets(offers ...string) string {
-	return getOffer(c.fasthttp.Request.Header.Peek(HeaderAcceptCharset), acceptsOffer, offers...)
+	return c.req.AcceptsCharsets(offers...)
 }
 
-// AcceptsEncodings checks if the specified encoding is acceptable.
+// AcceptsEncodings is an alias of [Request.AcceptsEncodings]
 func (c *DefaultCtx) AcceptsEncodings(offers ...string) string {
-	return getOffer(c.fasthttp.Request.Header.Peek(HeaderAcceptEncoding), acceptsOffer, offers...)
+	return c.req.AcceptsEncodings(offers...)
 }
 
-// AcceptsLanguages checks if the specified language is acceptable.
+// AcceptsLanguages is an alias of [Request.AcceptsLanguages]
 func (c *DefaultCtx) AcceptsLanguages(offers ...string) string {
-	return getOffer(c.fasthttp.Request.Header.Peek(HeaderAcceptLanguage), acceptsOffer, offers...)
+	return c.req.AcceptsLanguages(offers...)
 }
 
 // App returns the *App reference to the instance of the Fiber application
@@ -173,117 +162,19 @@ func (c *DefaultCtx) Attachment(filename ...string) {
 	c.setCanonical(HeaderContentDisposition, "attachment")
 }
 
-// BaseURL returns (protocol + host + base path).
+// BaseURL is an alias of [Request.BaseURL].
 func (c *DefaultCtx) BaseURL() string {
-	// TODO: Could be improved: 53.8 ns/op  32 B/op  1 allocs/op
-	// Should work like https://codeigniter.com/user_guide/helpers/url_helper.html
-	if c.baseURI != "" {
-		return c.baseURI
-	}
-	c.baseURI = c.Scheme() + "://" + c.Host()
-	return c.baseURI
+	return c.req.BaseURL()
 }
 
-// BodyRaw contains the raw body submitted in a POST request.
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting instead.
+// BodyRaw is an alias of [Request.BodyRaw].
 func (c *DefaultCtx) BodyRaw() []byte {
-	if c.app.config.Immutable {
-		return utils.CopyBytes(c.fasthttp.Request.Body())
-	}
-	return c.fasthttp.Request.Body()
+	return c.req.BodyRaw()
 }
 
-func (c *DefaultCtx) tryDecodeBodyInOrder(
-	originalBody *[]byte,
-	encodings []string,
-) ([]byte, uint8, error) {
-	var (
-		err             error
-		body            []byte
-		decodesRealized uint8
-	)
-
-	for index, encoding := range encodings {
-		decodesRealized++
-		switch encoding {
-		case StrGzip:
-			body, err = c.fasthttp.Request.BodyGunzip()
-		case StrBr, StrBrotli:
-			body, err = c.fasthttp.Request.BodyUnbrotli()
-		case StrDeflate:
-			body, err = c.fasthttp.Request.BodyInflate()
-		default:
-			decodesRealized--
-			if len(encodings) == 1 {
-				body = c.fasthttp.Request.Body()
-			}
-			return body, decodesRealized, nil
-		}
-
-		if err != nil {
-			return nil, decodesRealized, err
-		}
-
-		// Only execute body raw update if it has a next iteration to try to decode
-		if index < len(encodings)-1 && decodesRealized > 0 {
-			if index == 0 {
-				tempBody := c.fasthttp.Request.Body()
-				*originalBody = make([]byte, len(tempBody))
-				copy(*originalBody, tempBody)
-			}
-			c.fasthttp.Request.SetBodyRaw(body)
-		}
-	}
-
-	return body, decodesRealized, nil
-}
-
-// Body contains the raw body submitted in a POST request.
-// This method will decompress the body if the 'Content-Encoding' header is provided.
-// It returns the original (or decompressed) body data which is valid only within the handler.
-// Don't store direct references to the returned data.
-// If you need to keep the body's data later, make a copy or use the Immutable option.
+// Body is an alias of [Request.Body].
 func (c *DefaultCtx) Body() []byte {
-	var (
-		err                error
-		body, originalBody []byte
-		headerEncoding     string
-		encodingOrder      = []string{"", "", ""}
-	)
-
-	// faster than peek
-	c.Request().Header.VisitAll(func(key, value []byte) {
-		if c.app.getString(key) == HeaderContentEncoding {
-			headerEncoding = c.app.getString(value)
-		}
-	})
-
-	// Split and get the encodings list, in order to attend the
-	// rule defined at: https://www.rfc-editor.org/rfc/rfc9110#section-8.4-5
-	encodingOrder = getSplicedStrList(headerEncoding, encodingOrder)
-	if len(encodingOrder) == 0 {
-		if c.app.config.Immutable {
-			return utils.CopyBytes(c.fasthttp.Request.Body())
-		}
-		return c.fasthttp.Request.Body()
-	}
-
-	var decodesRealized uint8
-	body, decodesRealized, err = c.tryDecodeBodyInOrder(&originalBody, encodingOrder)
-
-	// Ensure that the body will be the original
-	if originalBody != nil && decodesRealized > 0 {
-		c.fasthttp.Request.SetBodyRaw(originalBody)
-	}
-	if err != nil {
-		return []byte(err.Error())
-	}
-
-	if c.app.config.Immutable {
-		return utils.CopyBytes(body)
-	}
-	return body
+	return c.req.Body()
 }
 
 // ClearCookie expires a specific cookie by key on the client side.
@@ -355,13 +246,9 @@ func (c *DefaultCtx) Cookie(cookie *Cookie) {
 	fasthttp.ReleaseCookie(fcookie)
 }
 
-// Cookies are used for getting a cookie value by key.
-// Defaults to the empty string "" if the cookie doesn't exist.
-// If a default value is given, it will return that value if the cookie doesn't exist.
-// The returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting to use the value outside the Handler.
+// Cookies is an alias of [Request.Cookies]
 func (c *DefaultCtx) Cookies(key string, defaultValue ...string) string {
-	return defaultString(c.app.getString(c.fasthttp.Request.Header.Cookie(key)), defaultValue)
+	return c.req.Cookies(key, defaultValue...)
 }
 
 // Download transfers the file from path as an attachment.
@@ -379,11 +266,11 @@ func (c *DefaultCtx) Download(file string, filename ...string) error {
 	return c.SendFile(file)
 }
 
-// Request return the *fasthttp.Request object
+// Req return the *fasthttp.Req object
 // This allows you to use all fasthttp request methods
-// https://godoc.org/github.com/valyala/fasthttp#Request
-func (c *DefaultCtx) Request() *fasthttp.Request {
-	return &c.fasthttp.Request
+// https://godoc.org/github.com/valyala/fasthttp#Req
+func (c *DefaultCtx) Req() *Request {
+	return &c.req
 }
 
 // Response return the *fasthttp.Response object
@@ -493,71 +380,21 @@ func (c *DefaultCtx) FormValue(key string, defaultValue ...string) string {
 	return defaultString(c.app.getString(c.fasthttp.FormValue(key)), defaultValue)
 }
 
-// Fresh returns true when the response is still “fresh” in the client's cache,
-// otherwise false is returned to indicate that the client cache is now stale
-// and the full response should be sent.
-// When a client sends the Cache-Control: no-cache request header to indicate an end-to-end
-// reload request, this module will return false to make handling these requests transparent.
-// https://github.com/jshttp/fresh/blob/10e0471669dbbfbfd8de65bc6efac2ddd0bfa057/index.js#L33
+// Fresh is an alias of [Request.Fresh]
 func (c *DefaultCtx) Fresh() bool {
-	// fields
-	modifiedSince := c.Get(HeaderIfModifiedSince)
-	noneMatch := c.Get(HeaderIfNoneMatch)
-
-	// unconditional request
-	if modifiedSince == "" && noneMatch == "" {
-		return false
-	}
-
-	// Always return stale when Cache-Control: no-cache
-	// to support end-to-end reload requests
-	// https://tools.ietf.org/html/rfc2616#section-14.9.4
-	cacheControl := c.Get(HeaderCacheControl)
-	if cacheControl != "" && isNoCache(cacheControl) {
-		return false
-	}
-
-	// if-none-match
-	if noneMatch != "" && noneMatch != "*" {
-		etag := c.app.getString(c.fasthttp.Response.Header.Peek(HeaderETag))
-		if etag == "" {
-			return false
-		}
-		if c.app.isEtagStale(etag, c.app.getBytes(noneMatch)) {
-			return false
-		}
-
-		if modifiedSince != "" {
-			lastModified := c.app.getString(c.fasthttp.Response.Header.Peek(HeaderLastModified))
-			if lastModified != "" {
-				lastModifiedTime, err := http.ParseTime(lastModified)
-				if err != nil {
-					return false
-				}
-				modifiedSinceTime, err := http.ParseTime(modifiedSince)
-				if err != nil {
-					return false
-				}
-				return lastModifiedTime.Before(modifiedSinceTime)
-			}
-		}
-	}
-	return true
+	return c.req.Fresh()
 }
 
-// Get returns the HTTP request header specified by field.
-// Field names are case-insensitive
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting instead.
+// Get is an alias of [Request.Get].
 func (c *DefaultCtx) Get(key string, defaultValue ...string) string {
-	return GetReqHeader(c, key, defaultValue...)
+	return c.req.Get(key, defaultValue...)
 }
 
 // GetReqHeader returns the HTTP request header specified by filed.
 // This function is generic and can handle differnet headers type values.
 func GetReqHeader[V GenericType](c Ctx, key string, defaultValue ...V) V {
 	var v V
-	return genericParseType[V](c.App().getString(c.Request().Header.Peek(key)), v, defaultValue...)
+	return genericParseType[V](c.Req().Get(key), v, defaultValue...)
 }
 
 // GetRespHeader returns the HTTP response header specified by field.
@@ -585,42 +422,21 @@ func (c *DefaultCtx) GetRespHeaders() map[string][]string {
 // Make copies or use the Immutable setting instead.
 func (c *DefaultCtx) GetReqHeaders() map[string][]string {
 	headers := make(map[string][]string)
-	c.Request().Header.VisitAll(func(k, v []byte) {
+	c.fasthttp.Request.Header.VisitAll(func(k, v []byte) {
 		key := c.app.getString(k)
 		headers[key] = append(headers[key], c.app.getString(v))
 	})
 	return headers
 }
 
-// Host contains the host derived from the X-Forwarded-Host or Host HTTP header.
-// Returned value is only valid within the handler. Do not store any references.
-// In a network context, `Host` refers to the combination of a hostname and potentially a port number used for connecting,
-// while `Hostname` refers specifically to the name assigned to a device on a network, excluding any port information.
-// Example: URL: https://example.com:8080 -> Host: example.com:8080
-// Make copies or use the Immutable setting instead.
-// Please use Config.EnableTrustedProxyCheck to prevent header spoofing, in case when your app is behind the proxy.
+// Host is an alias of [Request.Host].
 func (c *DefaultCtx) Host() string {
-	if c.IsProxyTrusted() {
-		if host := c.Get(HeaderXForwardedHost); len(host) > 0 {
-			commaPos := strings.Index(host, ",")
-			if commaPos != -1 {
-				return host[:commaPos]
-			}
-			return host
-		}
-	}
-	return c.app.getString(c.fasthttp.Request.URI().Host())
+	return c.req.Host()
 }
 
-// Hostname contains the hostname derived from the X-Forwarded-Host or Host HTTP header using the c.Host() method.
-// Returned value is only valid within the handler. Do not store any references.
-// Example: URL: https://example.com:8080 -> Hostname: example.com
-// Make copies or use the Immutable setting instead.
-// Please use Config.EnableTrustedProxyCheck to prevent header spoofing, in case when your app is behind the proxy.
+// Hostname is an alias of [Request.Hostname].
 func (c *DefaultCtx) Hostname() string {
-	addr, _ := parseAddr(c.Host())
-
-	return addr
+	return c.req.Hostname()
 }
 
 // Port returns the remote port of the request.
@@ -632,148 +448,19 @@ func (c *DefaultCtx) Port() string {
 	return strconv.Itoa(tcpaddr.Port)
 }
 
-// IP returns the remote IP address of the request.
-// If ProxyHeader and IP Validation is configured, it will parse that header and return the first valid IP address.
-// Please use Config.EnableTrustedProxyCheck to prevent header spoofing, in case when your app is behind the proxy.
+// IP is an alias of [Request.IP].
 func (c *DefaultCtx) IP() string {
-	if c.IsProxyTrusted() && len(c.app.config.ProxyHeader) > 0 {
-		return c.extractIPFromHeader(c.app.config.ProxyHeader)
-	}
-
-	return c.fasthttp.RemoteIP().String()
+	return c.req.IP()
 }
 
-// extractIPsFromHeader will return a slice of IPs it found given a header name in the order they appear.
-// When IP validation is enabled, any invalid IPs will be omitted.
-func (c *DefaultCtx) extractIPsFromHeader(header string) []string {
-	// TODO: Reuse the c.extractIPFromHeader func somehow in here
-
-	headerValue := c.Get(header)
-
-	// We can't know how many IPs we will return, but we will try to guess with this constant division.
-	// Counting ',' makes function slower for about 50ns in general case.
-	const maxEstimatedCount = 8
-	estimatedCount := len(headerValue) / maxEstimatedCount
-	if estimatedCount > maxEstimatedCount {
-		estimatedCount = maxEstimatedCount // Avoid big allocation on big header
-	}
-
-	ipsFound := make([]string, 0, estimatedCount)
-
-	i := 0
-	j := -1
-
-iploop:
-	for {
-		var v4, v6 bool
-
-		// Manually splitting string without allocating slice, working with parts directly
-		i, j = j+1, j+2
-
-		if j > len(headerValue) {
-			break
-		}
-
-		for j < len(headerValue) && headerValue[j] != ',' {
-			if headerValue[j] == ':' {
-				v6 = true
-			} else if headerValue[j] == '.' {
-				v4 = true
-			}
-			j++
-		}
-
-		for i < j && (headerValue[i] == ' ' || headerValue[i] == ',') {
-			i++
-		}
-
-		s := strings.TrimRight(headerValue[i:j], " ")
-
-		if c.app.config.EnableIPValidation {
-			// Skip validation if IP is clearly not IPv4/IPv6, otherwise validate without allocations
-			if (!v6 && !v4) || (v6 && !utils.IsIPv6(s)) || (v4 && !utils.IsIPv4(s)) {
-				continue iploop
-			}
-		}
-
-		ipsFound = append(ipsFound, s)
-	}
-
-	return ipsFound
-}
-
-// extractIPFromHeader will attempt to pull the real client IP from the given header when IP validation is enabled.
-// currently, it will return the first valid IP address in header.
-// when IP validation is disabled, it will simply return the value of the header without any inspection.
-// Implementation is almost the same as in extractIPsFromHeader, but without allocation of []string.
-func (c *DefaultCtx) extractIPFromHeader(header string) string {
-	if c.app.config.EnableIPValidation {
-		headerValue := c.Get(header)
-
-		i := 0
-		j := -1
-
-	iploop:
-		for {
-			var v4, v6 bool
-
-			// Manually splitting string without allocating slice, working with parts directly
-			i, j = j+1, j+2
-
-			if j > len(headerValue) {
-				break
-			}
-
-			for j < len(headerValue) && headerValue[j] != ',' {
-				if headerValue[j] == ':' {
-					v6 = true
-				} else if headerValue[j] == '.' {
-					v4 = true
-				}
-				j++
-			}
-
-			for i < j && headerValue[i] == ' ' {
-				i++
-			}
-
-			s := strings.TrimRight(headerValue[i:j], " ")
-
-			if c.app.config.EnableIPValidation {
-				if (!v6 && !v4) || (v6 && !utils.IsIPv6(s)) || (v4 && !utils.IsIPv4(s)) {
-					continue iploop
-				}
-			}
-
-			return s
-		}
-
-		return c.fasthttp.RemoteIP().String()
-	}
-
-	// default behavior if IP validation is not enabled is just to return whatever value is
-	// in the proxy header. Even if it is empty or invalid
-	return c.Get(c.app.config.ProxyHeader)
-}
-
-// IPs returns a string slice of IP addresses specified in the X-Forwarded-For request header.
-// When IP validation is enabled, only valid IPs are returned.
+// IPs is an alias of [Request.IPs].
 func (c *DefaultCtx) IPs() []string {
-	return c.extractIPsFromHeader(HeaderXForwardedFor)
+	return c.req.IPs()
 }
 
-// Is returns the matching content type,
-// if the incoming request's Content-Type HTTP header field matches the MIME type specified by the type parameter
+// Is is an alias of [Request.Is].
 func (c *DefaultCtx) Is(extension string) bool {
-	extensionHeader := utils.GetMIME(extension)
-	if extensionHeader == "" {
-		return false
-	}
-
-	return strings.HasPrefix(
-		strings.TrimLeft(utils.UnsafeString(c.fasthttp.Request.Header.ContentType()), " "),
-		extensionHeader,
-	)
+	return c.req.Is(extension)
 }
 
 // JSON converts any interface or string to JSON.
@@ -883,25 +570,9 @@ func (c *DefaultCtx) Location(path string) {
 	c.setCanonical(HeaderLocation, path)
 }
 
-// Method returns the HTTP request method for the context, optionally overridden by the provided argument.
-// If no override is given or if the provided override is not a valid HTTP method, it returns the current method from the context.
-// Otherwise, it updates the context's method and returns the overridden method as a string.
+// Method is an alias of [Request.Method]
 func (c *DefaultCtx) Method(override ...string) string {
-	if len(override) == 0 {
-		// Nothing to override, just return current method from context
-		return c.method
-	}
-
-	method := utils.ToUpper(override[0])
-	mINT := c.app.methodInt(method)
-	if mINT == -1 {
-		// Provided override does not valid HTTP method, no override, return current method
-		return c.method
-	}
-
-	c.method = method
-	c.methodINT = mINT
-	return c.method
+	return c.Req().Method(override...)
 }
 
 // MultipartForm parse form entries from binary.
@@ -925,9 +596,9 @@ func (c *DefaultCtx) Next() error {
 	c.indexHandler++
 	var err error
 	// Did we execute all route handlers?
-	if c.indexHandler < len(c.route.Handlers) {
+	if c.indexHandler < len(c.req.route.Handlers) {
 		// Continue route stack
-		err = c.route.Handlers[c.indexHandler](c)
+		err = c.req.route.Handlers[c.indexHandler](c)
 	} else {
 		// Continue handler stack
 		if c.app.newCtxFunc != nil {
@@ -953,35 +624,14 @@ func (c *DefaultCtx) RestartRouting() error {
 	return err
 }
 
-// OriginalURL contains the original request URL.
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting to use the value outside the Handler.
+// OriginalURL is an alias of [Request.OriginalURL]
 func (c *DefaultCtx) OriginalURL() string {
-	return c.app.getString(c.fasthttp.Request.Header.RequestURI())
+	return c.req.OriginalURL()
 }
 
-// Params is used to get the route parameters.
-// Defaults to empty string "" if the param doesn't exist.
-// If a default value is given, it will return that value if the param doesn't exist.
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting to use the value outside the Handler.
+// Params is an alias of [Request.Params].
 func (c *DefaultCtx) Params(key string, defaultValue ...string) string {
-	if key == "*" || key == "+" {
-		key += "1"
-	}
-	for i := range c.route.Params {
-		if len(key) != len(c.route.Params[i]) {
-			continue
-		}
-		if c.route.Params[i] == key || (!c.app.config.CaseSensitive && utils.EqualFold(c.route.Params[i], key)) {
-			// in case values are not here
-			if len(c.values) <= i || len(c.values[i]) == 0 {
-				break
-			}
-			return c.values[i]
-		}
-	}
-	return defaultString("", defaultValue)
+	return c.req.Params(key, defaultValue...)
 }
 
 // Params is used to get the route parameters.
@@ -1002,94 +652,27 @@ func Params[V GenericType](c Ctx, key string, defaultValue ...V) V {
 	return genericParseType(c.Params(key), v, defaultValue...)
 }
 
-// Path returns the path part of the request URL.
-// Optionally, you could override the path.
+// Path is an alias of [Request.Path].
 func (c *DefaultCtx) Path(override ...string) string {
-	if len(override) != 0 && c.path != override[0] {
-		// Set new path to context
-		c.pathOriginal = override[0]
-
-		// Set new path to request context
-		c.fasthttp.Request.URI().SetPath(c.pathOriginal)
-		// Prettify path
-		c.configDependentPaths()
-	}
-	return c.path
+	return c.req.Path(override...)
 }
 
-// Scheme contains the request protocol string: http or https for TLS requests.
-// Please use Config.EnableTrustedProxyCheck to prevent header spoofing, in case when your app is behind the proxy.
+// Scheme is an alias of [Request.Scheme].
 func (c *DefaultCtx) Scheme() string {
-	if c.fasthttp.IsTLS() {
-		return schemeHTTPS
-	}
-	if !c.IsProxyTrusted() {
-		return schemeHTTP
-	}
-
-	scheme := schemeHTTP
-	const lenXHeaderName = 12
-	c.fasthttp.Request.Header.VisitAll(func(key, val []byte) {
-		if len(key) < lenXHeaderName {
-			return // Neither "X-Forwarded-" nor "X-Url-Scheme"
-		}
-		switch {
-		case bytes.HasPrefix(key, []byte("X-Forwarded-")):
-			if bytes.Equal(key, []byte(HeaderXForwardedProto)) ||
-				bytes.Equal(key, []byte(HeaderXForwardedProtocol)) {
-				v := c.app.getString(val)
-				commaPos := strings.Index(v, ",")
-				if commaPos != -1 {
-					scheme = v[:commaPos]
-				} else {
-					scheme = v
-				}
-			} else if bytes.Equal(key, []byte(HeaderXForwardedSsl)) && bytes.Equal(val, []byte("on")) {
-				scheme = schemeHTTPS
-			}
-
-		case bytes.Equal(key, []byte(HeaderXUrlScheme)):
-			scheme = c.app.getString(val)
-		}
-	})
-	return scheme
+	return c.req.Scheme()
 }
 
-// Protocol returns the HTTP protocol of request: HTTP/1.1 and HTTP/2.
+// Protocol is an alias of [Request.Protocol].
 func (c *DefaultCtx) Protocol() string {
-	return utils.UnsafeString(c.fasthttp.Request.Header.Protocol())
+	return c.req.Protocol()
 }
 
-// Query returns the query string parameter in the url.
-// Defaults to empty string "" if the query doesn't exist.
-// If a default value is given, it will return that value if the query doesn't exist.
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting to use the value outside the Handler.
+// Query is an alias of [Request.Query].
 func (c *DefaultCtx) Query(key string, defaultValue ...string) string {
-	return Query[string](c, key, defaultValue...)
+	return c.req.Query(key, defaultValue...)
 }
 
-// Queries returns a map of query parameters and their values.
-//
-// GET /?name=alex&wanna_cake=2&id=
-// Queries()["name"] == "alex"
-// Queries()["wanna_cake"] == "2"
-// Queries()["id"] == ""
-//
-// GET /?field1=value1&field1=value2&field2=value3
-// Queries()["field1"] == "value2"
-// Queries()["field2"] == "value3"
-//
-// GET /?list_a=1&list_a=2&list_a=3&list_b[]=1&list_b[]=2&list_b[]=3&list_c=1,2,3
-// Queries()["list_a"] == "3"
-// Queries()["list_b[]"] == "3"
-// Queries()["list_c"] == "1,2,3"
-//
-// GET /api/search?filters.author.name=John&filters.category.name=Technology&filters[customer][name]=Alice&filters[status]=pending
-// Queries()["filters.author.name"] == "John"
-// Queries()["filters.category.name"] == "Technology"
-// Queries()["filters[customer][name]"] == "Alice"
-// Queries()["filters[status]"] == "pending"
+// Queries is an alias of [Request.Queries].
 func (c *DefaultCtx) Queries() map[string]string {
 	m := make(map[string]string, c.Context().QueryArgs().Len())
 	c.Context().QueryArgs().VisitAll(func(key, value []byte) {
@@ -1121,76 +704,12 @@ func (c *DefaultCtx) Queries() map[string]string {
 //	unknown := Query[string](c, "unknown", "default") // Returns "default" since the query parameter "unknown" is not found
 func Query[V GenericType](c Ctx, key string, defaultValue ...V) V {
 	var v V
-	q := c.App().getString(c.Context().QueryArgs().Peek(key))
-
-	return genericParseType[V](q, v, defaultValue...)
+	return genericParseType[V](c.Req().Query(key), v, defaultValue...)
 }
 
-// Range returns a struct containing the type and a slice of ranges.
+// Range is an alias of [Request.Range].
 func (c *DefaultCtx) Range(size int) (Range, error) {
-	var (
-		rangeData Range
-		ranges    string
-	)
-	rangeStr := c.Get(HeaderRange)
-
-	i := strings.IndexByte(rangeStr, '=')
-	if i == -1 || strings.Contains(rangeStr[i+1:], "=") {
-		return rangeData, ErrRangeMalformed
-	}
-	rangeData.Type = rangeStr[:i]
-	ranges = rangeStr[i+1:]
-
-	var (
-		singleRange string
-		moreRanges  = ranges
-	)
-	for moreRanges != "" {
-		singleRange = moreRanges
-		if i := strings.IndexByte(moreRanges, ','); i >= 0 {
-			singleRange = moreRanges[:i]
-			moreRanges = moreRanges[i+1:]
-		} else {
-			moreRanges = ""
-		}
-
-		var (
-			startStr, endStr string
-			i                int
-		)
-		if i = strings.IndexByte(singleRange, '-'); i == -1 {
-			return rangeData, ErrRangeMalformed
-		}
-		startStr = singleRange[:i]
-		endStr = singleRange[i+1:]
-
-		start, startErr := fasthttp.ParseUint(utils.UnsafeBytes(startStr))
-		end, endErr := fasthttp.ParseUint(utils.UnsafeBytes(endStr))
-		if startErr != nil { // -nnn
-			start = size - end
-			end = size - 1
-		} else if endErr != nil { // nnn-
-			end = size - 1
-		}
-		if end > size-1 { // limit last-byte-pos to current length
-			end = size - 1
-		}
-		if start > end || start < 0 {
-			continue
-		}
-		rangeData.Ranges = append(rangeData.Ranges, struct {
-			Start int
-			End   int
-		}{
-			start,
-			end,
-		})
-	}
-	if len(rangeData.Ranges) < 1 {
-		return rangeData, ErrRangeUnsatisfiable
-	}
-
-	return rangeData, nil
+	return c.req.Range(size)
 }
 
 // Redirect returns the Redirect reference.
@@ -1346,19 +865,9 @@ func (c *DefaultCtx) renderExtensions(bind any) {
 	}
 }
 
-// Route returns the matched Route struct.
+// Route is an alias of [Request.Route].
 func (c *DefaultCtx) Route() *Route {
-	if c.route == nil {
-		// Fallback for fasthttp error handler
-		return &Route{
-			path:     c.pathOriginal,
-			Path:     c.pathOriginal,
-			Method:   c.method,
-			Handlers: make([]Handler, 0),
-			Params:   make([]string, 0),
-		}
-	}
-	return c.route
+	return c.req.Route()
 }
 
 // SaveFile saves any multipart file to disk.
@@ -1431,7 +940,7 @@ func (c *DefaultCtx) SendFile(file string, compress ...bool) error {
 	})
 
 	// Keep original path for mutable params
-	c.pathOriginal = utils.CopyString(c.pathOriginal)
+	c.req.pathOriginal = utils.CopyString(c.req.pathOriginal)
 	// Disable compression
 	if len(compress) == 0 || !compress[0] {
 		// https://github.com/valyala/fasthttp/blob/7cc6f4c513f9e0d3686142e0a1a5aa2f76b3194a/fs.go#L55
@@ -1535,9 +1044,9 @@ func (c *DefaultCtx) Subdomains(offset ...int) []string {
 	return subdomains
 }
 
-// Stale is not implemented yet, pull requests are welcome!
+// Stale is an alias of [Request.Stale].
 func (c *DefaultCtx) Stale() bool {
-	return !c.Fresh()
+	return c.req.Stale()
 }
 
 // Status sets the HTTP status for the response.
@@ -1624,38 +1133,6 @@ func (c *DefaultCtx) WriteString(s string) (int, error) {
 // indicating that the request was issued by a client library (such as jQuery).
 func (c *DefaultCtx) XHR() bool {
 	return utils.EqualFold(c.app.getBytes(c.Get(HeaderXRequestedWith)), []byte("xmlhttprequest"))
-}
-
-// configDependentPaths set paths for route recognition and prepared paths for the user,
-// here the features for caseSensitive, decoded paths, strict paths are evaluated
-func (c *DefaultCtx) configDependentPaths() {
-	c.pathBuffer = append(c.pathBuffer[0:0], c.pathOriginal...)
-	// If UnescapePath enabled, we decode the path and save it for the framework user
-	if c.app.config.UnescapePath {
-		c.pathBuffer = fasthttp.AppendUnquotedArg(c.pathBuffer[:0], c.pathBuffer)
-	}
-	c.path = c.app.getString(c.pathBuffer)
-
-	// another path is specified which is for routing recognition only
-	// use the path that was changed by the previous configuration flags
-	c.detectionPathBuffer = append(c.detectionPathBuffer[0:0], c.pathBuffer...)
-	// If CaseSensitive is disabled, we lowercase the original path
-	if !c.app.config.CaseSensitive {
-		c.detectionPathBuffer = utils.ToLowerBytes(c.detectionPathBuffer)
-	}
-	// If StrictRouting is disabled, we strip all trailing slashes
-	if !c.app.config.StrictRouting && len(c.detectionPathBuffer) > 1 && c.detectionPathBuffer[len(c.detectionPathBuffer)-1] == '/' {
-		c.detectionPathBuffer = bytes.TrimRight(c.detectionPathBuffer, "/")
-	}
-	c.detectionPath = c.app.getString(c.detectionPathBuffer)
-
-	// Define the path for dividing routes into areas for fast tree detection, so that fewer routes need to be traversed,
-	// since the first three characters area select a list of routes
-	c.treePath = c.treePath[0:0]
-	const maxDetectionPaths = 3
-	if len(c.detectionPath) >= maxDetectionPaths {
-		c.treePath = c.detectionPath[:maxDetectionPaths]
-	}
 }
 
 // IsProxyTrusted checks trustworthiness of remote ip.

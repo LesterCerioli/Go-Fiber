@@ -161,7 +161,7 @@ func Test_Redirect_Back_WithReferer(t *testing.T) {
 	}).Name("back")
 	c := app.AcquireCtx(&fasthttp.RequestCtx{})
 
-	c.Request().Header.Set(HeaderReferer, "/back")
+	c.Context().Request.Header.Set(HeaderReferer, "/back")
 	err := c.Redirect().Back("/")
 	require.NoError(t, err)
 	require.Equal(t, 302, c.Response().StatusCode())
@@ -202,8 +202,9 @@ func Test_Redirect_Route_WithOldInput(t *testing.T) {
 	}).Name("user")
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
+	defer app.ReleaseCtx(c)
 
-	c.Request().URI().SetQueryString("id=1&name=tom")
+	c.Context().URI().SetQueryString("id=1&name=tom")
 	err := c.Redirect().With("success", "1").With("message", "test").WithInput().Route("user")
 	require.NoError(t, err)
 	require.Equal(t, 302, c.Response().StatusCode())
@@ -231,7 +232,7 @@ func Test_Redirect_setFlash(t *testing.T) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 
 	c.Redirect().setFlash()
 
@@ -429,7 +430,7 @@ func Benchmark_Redirect_setFlash(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -458,7 +459,7 @@ func Benchmark_Redirect_Messages(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().setFlash()
 
 	var msgs map[string]string
@@ -483,7 +484,7 @@ func Benchmark_Redirect_OldInputs(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().setFlash()
 
 	var oldInputs map[string]string
@@ -508,7 +509,7 @@ func Benchmark_Redirect_Message(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().setFlash()
 
 	var msg string
@@ -533,7 +534,7 @@ func Benchmark_Redirect_OldInput(b *testing.B) {
 
 	c := app.AcquireCtx(&fasthttp.RequestCtx{}).(*DefaultCtx) //nolint:errcheck, forcetypeassert // not needed
 
-	c.Request().Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
+	c.Context().Request.Header.Set(HeaderCookie, "fiber_flash=success:1,message:test,old_input_data_name:tom,old_input_data_id:1")
 	c.Redirect().setFlash()
 
 	var input string
