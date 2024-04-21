@@ -230,14 +230,14 @@ func New(config ...Config) fiber.Handler {
 			if cfg.MaxAge > 0 {
 				c.Set(fiber.HeaderCacheControl, cacheControlStr)
 			}
-			c.Response().SetBodyStream(file, contentLength)
+			c.Context().Response.SetBodyStream(file, contentLength)
 			return nil
 		}
 		if method == fiber.MethodHead {
 			c.Context().Request.ResetBody()
 			// Fasthttp should skipbody by default if HEAD?
-			c.Response().SkipBody = true
-			c.Response().Header.SetContentLength(contentLength)
+			c.Context().Response.SkipBody = true
+			c.Context().Response.Header.SetContentLength(contentLength)
 			if err := file.Close(); err != nil {
 				return fmt.Errorf("failed to close: %w", err)
 			}
@@ -305,14 +305,14 @@ func SendFile(c fiber.Ctx, filesystem fs.FS, path string) error {
 
 	method := c.Method()
 	if method == fiber.MethodGet {
-		c.Response().SetBodyStream(file, contentLength)
+		c.Context().Response.SetBodyStream(file, contentLength)
 		return nil
 	}
 	if method == fiber.MethodHead {
 		c.Context().Request.ResetBody()
 		// Fasthttp should skipbody by default if HEAD?
-		c.Response().SkipBody = true
-		c.Response().Header.SetContentLength(contentLength)
+		c.Context().Response.SkipBody = true
+		c.Context().Response.Header.SetContentLength(contentLength)
 		if err := file.Close(); err != nil {
 			return fmt.Errorf("failed to close: %w", err)
 		}

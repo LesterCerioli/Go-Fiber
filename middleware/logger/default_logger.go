@@ -33,7 +33,7 @@ func defaultLoggerInstance(c fiber.Ctx, data *Data, cfg Config) error {
 			buf.WriteString(
 				fmt.Sprintf("%s |%s %3d %s| %13v | %15s |%s %-7s %s| %-"+data.ErrPaddingStr+"s %s\n",
 					data.Timestamp.Load().(string), //nolint:forcetypeassert // Timestamp is always a string
-					statusColor(c.Response().StatusCode(), colors), c.Response().StatusCode(), colors.Reset,
+					statusColor(c.Context().Response.StatusCode(), colors), c.Context().Response.StatusCode(), colors.Reset,
 					data.Stop.Sub(data.Start),
 					c.IP(),
 					methodColor(c.Method(), colors), c.Method(), colors.Reset,
@@ -66,7 +66,7 @@ func defaultLoggerInstance(c fiber.Ctx, data *Data, cfg Config) error {
 			buf.WriteString(" | ")
 
 			// Status Code with 3 fixed width, right aligned
-			fixedWidth(strconv.Itoa(c.Response().StatusCode()), 3, true)
+			fixedWidth(strconv.Itoa(c.Context().Response.StatusCode()), 3, true)
 			buf.WriteString(" | ")
 
 			// Duration with 13 fixed width, right aligned

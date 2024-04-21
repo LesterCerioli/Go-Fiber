@@ -499,7 +499,7 @@ func (r *Request) Fresh() bool {
 
 	// if-none-match
 	if noneMatch != "" && noneMatch != "*" {
-		etag := r.app.getString(r.ctx.Response().Header.Peek(HeaderETag))
+		etag := r.ctx.Res().Get(HeaderETag)
 		if etag == "" {
 			return false
 		}
@@ -508,7 +508,7 @@ func (r *Request) Fresh() bool {
 		}
 
 		if modifiedSince != "" {
-			lastModified := r.app.getString(r.ctx.Response().Header.Peek(HeaderLastModified))
+			lastModified := r.ctx.Res().Get(HeaderLastModified)
 			if lastModified != "" {
 				lastModifiedTime, err := http.ParseTime(lastModified)
 				if err != nil {
@@ -556,7 +556,7 @@ func (r *Request) Subdomains(offset ...int) []string {
 // XHR returns a Boolean property, that is true, if the request's X-Requested-With header field is XMLHttpRequest,
 // indicating that the request was issued by a client library (such as jQuery).
 func (r *Request) XHR() bool {
-	return utils.EqualFold(r.Get(HeaderXRequestedWith), "xmlhttprequest")
+	return utils.EqualFold(r.fasthttp.Header.Peek(HeaderXRequestedWith), []byte("xmlhttprequest"))
 }
 
 // Params is used to get the route parameters.

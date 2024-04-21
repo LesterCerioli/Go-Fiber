@@ -981,8 +981,8 @@ func Test_App_Static_Custom_CacheControl(t *testing.T) {
 	app := New()
 
 	app.Static("/", "./.github", Static{ModifyResponse: func(c Ctx) error {
-		if strings.Contains(c.GetRespHeader("Content-Type"), "text/html") {
-			c.Response().Header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		if strings.Contains(c.Res().Get("Content-Type"), "text/html") {
+			c.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		}
 		return nil
 	}})

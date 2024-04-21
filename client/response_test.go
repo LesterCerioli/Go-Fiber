@@ -182,7 +182,7 @@ func Test_Response_Header(t *testing.T) {
 
 	server := startTestServer(t, func(app *fiber.App) {
 		app.Get("/", func(c fiber.Ctx) error {
-			c.Response().Header.Add("foo", "bar")
+			c.Set("foo", "bar")
 			return c.SendString("helo world")
 		})
 	})

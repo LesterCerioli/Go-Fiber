@@ -540,21 +540,21 @@ func Test_Bind_RespHeader(t *testing.T) {
 	c.Context().Request.SetBody([]byte(``))
 	c.Context().Request.Header.SetContentType("")
 
-	c.Response().Header.Add("id", "1")
-	c.Response().Header.Add("Name", "John Doe")
-	c.Response().Header.Add("Hobby", "golang,fiber")
+	c.Context().Response.Header.Add("id", "1")
+	c.Context().Response.Header.Add("Name", "John Doe")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber")
 	q := new(Header)
 	require.NoError(t, c.Bind().RespHeader(q))
 	require.Len(t, q.Hobby, 2)
 
-	c.Response().Header.Del("hobby")
-	c.Response().Header.Add("Hobby", "golang,fiber,go")
+	c.Context().Response.Header.Del("hobby")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber,go")
 	q = new(Header)
 	require.NoError(t, c.Bind().RespHeader(q))
 	require.Len(t, q.Hobby, 3)
 
 	empty := new(Header)
-	c.Response().Header.Del("hobby")
+	c.Context().Response.Header.Del("hobby")
 	require.NoError(t, c.Bind().Query(empty))
 	require.Empty(t, empty.Hobby)
 
@@ -569,13 +569,13 @@ func Test_Bind_RespHeader(t *testing.T) {
 		No              []int64
 	}
 
-	c.Response().Header.Add("id", "2")
-	c.Response().Header.Add("Name", "Jane Doe")
-	c.Response().Header.Del("hobby")
-	c.Response().Header.Add("Hobby", "go,fiber")
-	c.Response().Header.Add("favouriteDrinks", "milo,coke,pepsi")
-	c.Response().Header.Add("alloc", "")
-	c.Response().Header.Add("no", "1")
+	c.Context().Response.Header.Add("id", "2")
+	c.Context().Response.Header.Add("Name", "Jane Doe")
+	c.Context().Response.Header.Del("hobby")
+	c.Context().Response.Header.Add("Hobby", "go,fiber")
+	c.Context().Response.Header.Add("favouriteDrinks", "milo,coke,pepsi")
+	c.Context().Response.Header.Add("alloc", "")
+	c.Context().Response.Header.Add("no", "1")
 
 	h2 := new(Header2)
 	h2.Bool = true
@@ -594,7 +594,7 @@ func Test_Bind_RespHeader(t *testing.T) {
 		Name string `respHeader:"name,required"`
 	}
 	rh := new(RequiredHeader)
-	c.Response().Header.Del("name")
+	c.Context().Response.Header.Del("name")
 	require.Equal(t, "name is empty", c.Bind().RespHeader(rh).Error())
 }
 
@@ -608,21 +608,21 @@ func Test_Bind_RespHeader_Map(t *testing.T) {
 	c.Context().Request.SetBody([]byte(``))
 	c.Context().Request.Header.SetContentType("")
 
-	c.Response().Header.Add("id", "1")
-	c.Response().Header.Add("Name", "John Doe")
-	c.Response().Header.Add("Hobby", "golang,fiber")
+	c.Context().Response.Header.Add("id", "1")
+	c.Context().Response.Header.Add("Name", "John Doe")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber")
 	q := make(map[string][]string, 0)
 	require.NoError(t, c.Bind().RespHeader(&q))
 	require.Len(t, q["Hobby"], 2)
 
-	c.Response().Header.Del("hobby")
-	c.Response().Header.Add("Hobby", "golang,fiber,go")
+	c.Context().Response.Header.Del("hobby")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber,go")
 	q = make(map[string][]string, 0)
 	require.NoError(t, c.Bind().RespHeader(&q))
 	require.Len(t, q["Hobby"], 3)
 
 	empty := make(map[string][]string, 0)
-	c.Response().Header.Del("hobby")
+	c.Context().Response.Header.Del("hobby")
 	require.NoError(t, c.Bind().Query(&empty))
 	require.Empty(t, empty["Hobby"])
 }
@@ -789,9 +789,9 @@ func Benchmark_Bind_RespHeader(b *testing.B) {
 	c.Context().Request.SetBody([]byte(``))
 	c.Context().Request.Header.SetContentType("")
 
-	c.Response().Header.Add("id", "1")
-	c.Response().Header.Add("Name", "John Doe")
-	c.Response().Header.Add("Hobby", "golang,fiber")
+	c.Context().Response.Header.Add("id", "1")
+	c.Context().Response.Header.Add("Name", "John Doe")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber")
 
 	q := new(ReqHeader)
 	b.ReportAllocs()
@@ -811,9 +811,9 @@ func Benchmark_Bind_RespHeader_Map(b *testing.B) {
 	c.Context().Request.SetBody([]byte(``))
 	c.Context().Request.Header.SetContentType("")
 
-	c.Response().Header.Add("id", "1")
-	c.Response().Header.Add("Name", "John Doe")
-	c.Response().Header.Add("Hobby", "golang,fiber")
+	c.Context().Response.Header.Add("id", "1")
+	c.Context().Response.Header.Add("Name", "John Doe")
+	c.Context().Response.Header.Add("Hobby", "golang,fiber")
 
 	q := make(map[string][]string)
 	b.ReportAllocs()
@@ -1540,7 +1540,7 @@ func Test_Bind_Must(t *testing.T) {
 	rq := new(RequiredQuery)
 	c.Context().URI().SetQueryString("")
 	err := c.Bind().Must().Query(rq)
-	require.Equal(t, StatusBadRequest, c.Response().StatusCode())
+	require.Equal(t, StatusBadRequest, c.Context().Response.StatusCode())
 	require.Equal(t, "Bad request: name is empty", err.Error())
 }
 

@@ -12,11 +12,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net"
-	"path/filepath"
 	"strconv"
-	"strings"
-	"sync"
-	"text/template"
 	"time"
 
 	"github.com/gofiber/utils/v2"
@@ -40,17 +36,15 @@ type contextKey int
 const userContextKey contextKey = 0 // __local_user_context__
 
 type DefaultCtx struct {
-	app *App    // Reference to *App
-	req Request // Reference to *Request
-	// res				*Response // Reference to *Response
-	indexRoute          int                  // Index of the current route
-	indexHandler        int                  // Index of the current handler
-	fasthttp            *fasthttp.RequestCtx // Reference to *fasthttp.RequestCtx
-	matched             bool                 // Non use route matched
-	viewBindMap         sync.Map             // Default view map to bind template engine
-	bind                *Bind                // Default bind reference
-	redirect            *Redirect            // Default redirect reference
-	redirectionMessages []string             // Messages of the previous redirect
+	app          *App                 // Reference to *App
+	req          Request              // Reference to *Request
+	res          Response             // Reference to *Response
+	indexRoute   int                  // Index of the current route
+	indexHandler int                  // Index of the current handler
+	fasthttp     *fasthttp.RequestCtx // Reference to *fasthttp.RequestCtx
+	matched      bool                 // Non use route matched
+	bind         *Bind                // Default bind reference
+	redirect     *Redirect            // Default redirect reference
 }
 
 // TLSHandler object
@@ -98,12 +92,6 @@ type Views interface {
 	Render(out io.Writer, name string, binding any, layout ...string) error
 }
 
-// ResFmt associates a Content Type to a fiber.Handler for c.Format
-type ResFmt struct {
-	MediaType string
-	Handler   func(Ctx) error
-}
-
 // Accepts is an alias of [Request.Accepts]
 func (c *DefaultCtx) Accepts(offers ...string) string {
 	return c.req.Accepts(offers...)
@@ -129,37 +117,14 @@ func (c *DefaultCtx) App() *App {
 	return c.app
 }
 
-// Append the specified value to the HTTP response header field.
-// If the header is not already set, it creates the header with the specified value.
+// Append is an alias of [Response.Append].
 func (c *DefaultCtx) Append(field string, values ...string) {
-	if len(values) == 0 {
-		return
-	}
-	h := c.app.getString(c.fasthttp.Response.Header.Peek(field))
-	originalH := h
-	for _, value := range values {
-		if len(h) == 0 {
-			h = value
-		} else if h != value && !strings.HasPrefix(h, value+",") && !strings.HasSuffix(h, " "+value) &&
-			!strings.Contains(h, " "+value+",") {
-			h += ", " + value
-		}
-	}
-	if originalH != h {
-		c.Set(field, h)
-	}
+	c.res.Append(field, values...)
 }
 
-// Attachment sets the HTTP response Content-Disposition header field to attachment.
+// Attachment is an alias of [Response.Attachment].
 func (c *DefaultCtx) Attachment(filename ...string) {
-	if len(filename) > 0 {
-		fname := filepath.Base(filename[0])
-		c.Type(filepath.Ext(fname))
-
-		c.setCanonical(HeaderContentDisposition, `attachment; filename="`+c.app.quoteString(fname)+`"`)
-		return
-	}
-	c.setCanonical(HeaderContentDisposition, "attachment")
+	c.res.Attachment(filename...)
 }
 
 // BaseURL is an alias of [Request.BaseURL].
@@ -177,18 +142,9 @@ func (c *DefaultCtx) Body() []byte {
 	return c.req.Body()
 }
 
-// ClearCookie expires a specific cookie by key on the client side.
-// If no key is provided it expires all cookies that came with the request.
+// ClearCookie is an alias of [Response.ClearCookie].
 func (c *DefaultCtx) ClearCookie(key ...string) {
-	if len(key) > 0 {
-		for i := range key {
-			c.fasthttp.Response.Header.DelClientCookie(key[i])
-		}
-		return
-	}
-	c.fasthttp.Request.Header.VisitAllCookie(func(k, _ []byte) {
-		c.fasthttp.Response.Header.DelClientCookieBytes(k)
-	})
+	c.res.ClearCookie(key...)
 }
 
 // Context returns *fasthttp.RequestCtx that carries a deadline
@@ -214,36 +170,9 @@ func (c *DefaultCtx) SetUserContext(ctx context.Context) {
 	c.fasthttp.SetUserValue(userContextKey, ctx)
 }
 
-// Cookie sets a cookie by passing a cookie struct.
+// Cookie is an alias of [Response.Cookie].
 func (c *DefaultCtx) Cookie(cookie *Cookie) {
-	fcookie := fasthttp.AcquireCookie()
-	fcookie.SetKey(cookie.Name)
-	fcookie.SetValue(cookie.Value)
-	fcookie.SetPath(cookie.Path)
-	fcookie.SetDomain(cookie.Domain)
-	// only set max age and expiry when SessionOnly is false
-	// i.e. cookie supposed to last beyond browser session
-	// refer: https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#define_the_lifetime_of_a_cookie
-	if !cookie.SessionOnly {
-		fcookie.SetMaxAge(cookie.MaxAge)
-		fcookie.SetExpire(cookie.Expires)
-	}
-	fcookie.SetSecure(cookie.Secure)
-	fcookie.SetHTTPOnly(cookie.HTTPOnly)
-
-	switch utils.ToLower(cookie.SameSite) {
-	case CookieSameSiteStrictMode:
-		fcookie.SetSameSite(fasthttp.CookieSameSiteStrictMode)
-	case CookieSameSiteNoneMode:
-		fcookie.SetSameSite(fasthttp.CookieSameSiteNoneMode)
-	case CookieSameSiteDisabled:
-		fcookie.SetSameSite(fasthttp.CookieSameSiteDisabled)
-	default:
-		fcookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
-	}
-
-	c.fasthttp.Response.Header.SetCookie(fcookie)
-	fasthttp.ReleaseCookie(fcookie)
+	c.res.Cookie(cookie)
 }
 
 // Cookies is an alias of [Request.Cookies]
@@ -251,26 +180,19 @@ func (c *DefaultCtx) Cookies(key string, defaultValue ...string) string {
 	return c.req.Cookies(key, defaultValue...)
 }
 
-// Download transfers the file from path as an attachment.
-// Typically, browsers will prompt the user for download.
-// By default, the Content-Disposition header filename= parameter is the filepath (this typically appears in the browser dialog).
-// Override this default with the filename parameter.
+// Download is an alias of [Response.Download].
 func (c *DefaultCtx) Download(file string, filename ...string) error {
-	var fname string
-	if len(filename) > 0 {
-		fname = filename[0]
-	} else {
-		fname = filepath.Base(file)
-	}
-	c.setCanonical(HeaderContentDisposition, `attachment; filename="`+c.app.quoteString(fname)+`"`)
-	return c.SendFile(file)
+	return c.res.Download(file, filename...)
 }
 
-// Req return the *fasthttp.Req object
-// This allows you to use all fasthttp request methods
-// https://godoc.org/github.com/valyala/fasthttp#Req
+// Req returns the Request object for the current context.
 func (c *DefaultCtx) Req() *Request {
 	return &c.req
+}
+
+// Res returns the Response object for the current context.
+func (c *DefaultCtx) Res() *Response {
+	return &c.res
 }
 
 // Response return the *fasthttp.Response object
@@ -280,54 +202,9 @@ func (c *DefaultCtx) Response() *fasthttp.Response {
 	return &c.fasthttp.Response
 }
 
-// Format performs content-negotiation on the Accept HTTP header.
-// It uses Accepts to select a proper format and calls the matching
-// user-provided handler function.
-// If no accepted format is found, and a format with MediaType "default" is given,
-// that default handler is called. If no format is found and no default is given,
-// StatusNotAcceptable is sent.
+// Format is an alias of [Response.Format]
 func (c *DefaultCtx) Format(handlers ...ResFmt) error {
-	if len(handlers) == 0 {
-		return ErrNoHandlers
-	}
-
-	c.Vary(HeaderAccept)
-
-	if c.Get(HeaderAccept) == "" {
-		c.Response().Header.SetContentType(handlers[0].MediaType)
-		return handlers[0].Handler(c)
-	}
-
-	// Using an int literal as the slice capacity allows for the slice to be
-	// allocated on the stack. The number was chosen arbitrarily as an
-	// approximation of the maximum number of content types a user might handle.
-	// If the user goes over, it just causes allocations, so it's not a problem.
-	types := make([]string, 0, 8)
-	var defaultHandler Handler
-	for _, h := range handlers {
-		if h.MediaType == "default" {
-			defaultHandler = h.Handler
-			continue
-		}
-		types = append(types, h.MediaType)
-	}
-	accept := c.Accepts(types...)
-
-	if accept == "" {
-		if defaultHandler == nil {
-			return c.SendStatus(StatusNotAcceptable)
-		}
-		return defaultHandler(c)
-	}
-
-	for _, h := range handlers {
-		if h.MediaType == accept {
-			c.Response().Header.SetContentType(h.MediaType)
-			return h.Handler(c)
-		}
-	}
-
-	return fmt.Errorf("%w: format: an Accept was found but no handler was called", errUnreachable)
+	return c.res.Format(handlers...)
 }
 
 // AutoFormat performs content-negotiation on the Accept HTTP header.
@@ -397,12 +274,9 @@ func GetReqHeader[V GenericType](c Ctx, key string, defaultValue ...V) V {
 	return genericParseType[V](c.Req().Get(key), v, defaultValue...)
 }
 
-// GetRespHeader returns the HTTP response header specified by field.
-// Field names are case-insensitive
-// Returned value is only valid within the handler. Do not store any references.
-// Make copies or use the Immutable setting instead.
+// GetRespHeader is an alias of [Response.Get].
 func (c *DefaultCtx) GetRespHeader(key string, defaultValue ...string) string {
-	return defaultString(c.app.getString(c.fasthttp.Response.Header.Peek(key)), defaultValue)
+	return c.res.Get(key, defaultValue...)
 }
 
 // GetRespHeaders returns the HTTP response headers.
@@ -463,80 +337,24 @@ func (c *DefaultCtx) Is(extension string) bool {
 	return c.req.Is(extension)
 }
 
-// JSON converts any interface or string to JSON.
-// Array and slice values encode as JSON arrays,
-// except that []byte encodes as a base64-encoded string,
-// and a nil slice encodes as the null JSON value.
-// If the ctype parameter is given, this method will set the
-// Content-Type header equal to ctype. If ctype is not given,
-// The Content-Type header will be set to application/json.
+// JSON is an alias of [Response.JSON].
 func (c *DefaultCtx) JSON(data any, ctype ...string) error {
-	raw, err := c.app.config.JSONEncoder(data)
-	if err != nil {
-		return err
-	}
-	c.fasthttp.Response.SetBodyRaw(raw)
-	if len(ctype) > 0 {
-		c.fasthttp.Response.Header.SetContentType(ctype[0])
-	} else {
-		c.fasthttp.Response.Header.SetContentType(MIMEApplicationJSON)
-	}
-	return nil
+	return c.res.JSON(data, ctype...)
 }
 
-// JSONP sends a JSON response with JSONP support.
-// This method is identical to JSON, except that it opts-in to JSONP callback support.
-// By default, the callback name is simply callback.
+// JSONP is an alias of [Response.JSONP].
 func (c *DefaultCtx) JSONP(data any, callback ...string) error {
-	raw, err := c.app.config.JSONEncoder(data)
-	if err != nil {
-		return err
-	}
-
-	var result, cb string
-
-	if len(callback) > 0 {
-		cb = callback[0]
-	} else {
-		cb = "callback"
-	}
-
-	result = cb + "(" + c.app.getString(raw) + ");"
-
-	c.setCanonical(HeaderXContentTypeOptions, "nosniff")
-	c.fasthttp.Response.Header.SetContentType(MIMETextJavaScriptCharsetUTF8)
-	return c.SendString(result)
+	return c.res.JSONP(data, callback...)
 }
 
-// XML converts any interface or string to XML.
-// This method also sets the content header to application/xml.
+// XML is an alias of [Response.XML].
 func (c *DefaultCtx) XML(data any) error {
-	raw, err := c.app.config.XMLEncoder(data)
-	if err != nil {
-		return err
-	}
-	c.fasthttp.Response.SetBodyRaw(raw)
-	c.fasthttp.Response.Header.SetContentType(MIMEApplicationXML)
-	return nil
+	return c.res.XML(data)
 }
 
-// Links joins the links followed by the property to populate the response's Link HTTP header field.
+// Links is an alias of [Response.Links].
 func (c *DefaultCtx) Links(link ...string) {
-	if len(link) == 0 {
-		return
-	}
-	bb := bytebufferpool.Get()
-	for i := range link {
-		if i%2 == 0 {
-			bb.WriteByte('<')
-			bb.WriteString(link[i])
-			bb.WriteByte('>')
-		} else {
-			bb.WriteString(`; rel="` + link[i] + `",`)
-		}
-	}
-	c.setCanonical(HeaderLink, strings.TrimRight(c.app.getString(bb.Bytes()), ","))
-	bytebufferpool.Put(bb)
+	c.res.Links(link...)
 }
 
 // Locals makes it possible to pass any values under keys scoped to the request
@@ -565,14 +383,14 @@ func Locals[V any](c Ctx, key any, value ...V) V {
 	return v
 }
 
-// Location sets the response Location HTTP header to the specified path parameter.
+// Location is an alias of [Response.Location].
 func (c *DefaultCtx) Location(path string) {
-	c.setCanonical(HeaderLocation, path)
+	c.res.Location(path)
 }
 
-// Method is an alias of [Request.Method]
+// Method is an alias of [Request.Method].
 func (c *DefaultCtx) Method(override ...string) string {
-	return c.Req().Method(override...)
+	return c.req.Method(override...)
 }
 
 // MultipartForm parse form entries from binary.
@@ -725,14 +543,9 @@ func (c *DefaultCtx) Redirect() *Redirect {
 	return c.redirect
 }
 
-// ViewBind Add vars to default view var map binding to template engine.
-// Variables are read by the Render method and may be overwritten.
+// ViewBind is an alias of [Response.ViewBind].
 func (c *DefaultCtx) ViewBind(vars Map) error {
-	// init viewBindMap - lazy map
-	for k, v := range vars {
-		c.viewBindMap.Store(k, v)
-	}
-	return nil
+	return c.res.ViewBind(vars)
 }
 
 // getLocationFromRoute get URL location from route using parameters
@@ -769,100 +582,9 @@ func (c *DefaultCtx) GetRouteURL(routeName string, params Map) (string, error) {
 	return c.getLocationFromRoute(c.App().GetRoute(routeName), params)
 }
 
-// Render a template with data and sends a text/html response.
-// We support the following engines: https://github.com/gofiber/template
+// Render is an alias of [Response.Render].
 func (c *DefaultCtx) Render(name string, bind Map, layouts ...string) error {
-	// Get new buffer from pool
-	buf := bytebufferpool.Get()
-	defer bytebufferpool.Put(buf)
-
-	// Initialize empty bind map if bind is nil
-	if bind == nil {
-		bind = make(Map)
-	}
-
-	// Pass-locals-to-views, bind, appListKeys
-	c.renderExtensions(bind)
-
-	var rendered bool
-	for i := len(c.app.mountFields.appListKeys) - 1; i >= 0; i-- {
-		prefix := c.app.mountFields.appListKeys[i]
-		app := c.app.mountFields.appList[prefix]
-		if prefix == "" || strings.Contains(c.OriginalURL(), prefix) {
-			if len(layouts) == 0 && app.config.ViewsLayout != "" {
-				layouts = []string{
-					app.config.ViewsLayout,
-				}
-			}
-
-			// Render template from Views
-			if app.config.Views != nil {
-				if err := app.config.Views.Render(buf, name, bind, layouts...); err != nil {
-					return fmt.Errorf("failed to render: %w", err)
-				}
-
-				rendered = true
-				break
-			}
-		}
-	}
-
-	if !rendered {
-		// Render raw template using 'name' as filepath if no engine is set
-		var tmpl *template.Template
-		if _, err := readContent(buf, name); err != nil {
-			return err
-		}
-		// Parse template
-		tmpl, err := template.New("").Parse(c.app.getString(buf.Bytes()))
-		if err != nil {
-			return fmt.Errorf("failed to parse: %w", err)
-		}
-		buf.Reset()
-		// Render template
-		if err := tmpl.Execute(buf, bind); err != nil {
-			return fmt.Errorf("failed to execute: %w", err)
-		}
-	}
-
-	// Set Content-Type to text/html
-	c.fasthttp.Response.Header.SetContentType(MIMETextHTMLCharsetUTF8)
-	// Set rendered template to body
-	c.fasthttp.Response.SetBody(buf.Bytes())
-
-	return nil
-}
-
-func (c *DefaultCtx) renderExtensions(bind any) {
-	if bindMap, ok := bind.(Map); ok {
-		// Bind view map
-		c.viewBindMap.Range(func(key, value any) bool {
-			keyValue, ok := key.(string)
-			if !ok {
-				return true
-			}
-			if _, ok := bindMap[keyValue]; !ok {
-				bindMap[keyValue] = value
-			}
-			return true
-		})
-
-		// Check if the PassLocalsToViews option is enabled (by default it is disabled)
-		if c.app.config.PassLocalsToViews {
-			// Loop through each local and set it in the map
-			c.fasthttp.VisitUserValues(func(key []byte, val any) {
-				// check if bindMap doesn't contain the key
-				if _, ok := bindMap[c.app.getString(key)]; !ok {
-					// Set the key and value in the bindMap
-					bindMap[c.app.getString(key)] = val
-				}
-			})
-		}
-	}
-
-	if len(c.app.mountFields.appListKeys) == 0 {
-		c.app.generateAppListKeys()
-	}
+	return c.res.Render(name, bind, layouts...)
 }
 
 // Route is an alias of [Request.Route].
@@ -894,117 +616,29 @@ func (*DefaultCtx) SaveFileToStorage(fileheader *multipart.FileHeader, path stri
 	return nil
 }
 
-// Secure returns whether a secure connection was established.
+// Secure is an alias of [Request.Secure].
 func (c *DefaultCtx) Secure() bool {
-	return c.Protocol() == schemeHTTPS
+	return c.req.Secure()
 }
 
-// Send sets the HTTP response body without copying it.
-// From this point onward the body argument must not be changed.
+// Send is an alias of [Response.Send].
 func (c *DefaultCtx) Send(body []byte) error {
-	// Write response body
-	c.fasthttp.Response.SetBodyRaw(body)
-	return nil
+	return c.res.Send(body)
 }
 
-var (
-	sendFileOnce    sync.Once
-	sendFileFS      *fasthttp.FS
-	sendFileHandler fasthttp.RequestHandler
-)
-
-// SendFile transfers the file from the given path.
-// The file is not compressed by default, enable this by passing a 'true' argument
-// Sets the Content-Type response HTTP header field based on the filenames extension.
+// SendFile is an alias of [Response.SendFile].
 func (c *DefaultCtx) SendFile(file string, compress ...bool) error {
-	// Save the filename, we will need it in the error message if the file isn't found
-	filename := file
-
-	// https://github.com/valyala/fasthttp/blob/c7576cc10cabfc9c993317a2d3f8355497bea156/fs.go#L129-L134
-	sendFileOnce.Do(func() {
-		const cacheDuration = 10 * time.Second
-		sendFileFS = &fasthttp.FS{
-			Root:                 "",
-			AllowEmptyRoot:       true,
-			GenerateIndexPages:   false,
-			AcceptByteRange:      true,
-			Compress:             true,
-			CompressedFileSuffix: c.app.config.CompressedFileSuffix,
-			CacheDuration:        cacheDuration,
-			IndexNames:           []string{"index.html"},
-			PathNotFound: func(ctx *fasthttp.RequestCtx) {
-				ctx.Response.SetStatusCode(StatusNotFound)
-			},
-		}
-		sendFileHandler = sendFileFS.NewRequestHandler()
-	})
-
-	// Keep original path for mutable params
-	c.req.pathOriginal = utils.CopyString(c.req.pathOriginal)
-	// Disable compression
-	if len(compress) == 0 || !compress[0] {
-		// https://github.com/valyala/fasthttp/blob/7cc6f4c513f9e0d3686142e0a1a5aa2f76b3194a/fs.go#L55
-		c.fasthttp.Request.Header.Del(HeaderAcceptEncoding)
-	}
-	// copy of https://github.com/valyala/fasthttp/blob/7cc6f4c513f9e0d3686142e0a1a5aa2f76b3194a/fs.go#L103-L121 with small adjustments
-	if len(file) == 0 || !filepath.IsAbs(file) {
-		// extend relative path to absolute path
-		hasTrailingSlash := len(file) > 0 && (file[len(file)-1] == '/' || file[len(file)-1] == '\\')
-
-		var err error
-		file = filepath.FromSlash(file)
-		if file, err = filepath.Abs(file); err != nil {
-			return fmt.Errorf("failed to determine abs file path: %w", err)
-		}
-		if hasTrailingSlash {
-			file += "/"
-		}
-	}
-	// convert the path to forward slashes regardless the OS in order to set the URI properly
-	// the handler will convert back to OS path separator before opening the file
-	file = filepath.ToSlash(file)
-
-	// Restore the original requested URL
-	originalURL := utils.CopyString(c.OriginalURL())
-	defer c.fasthttp.Request.SetRequestURI(originalURL)
-	// Set new URI for fileHandler
-	c.fasthttp.Request.SetRequestURI(file)
-	// Save status code
-	status := c.fasthttp.Response.StatusCode()
-	// Serve file
-	sendFileHandler(c.fasthttp)
-	// Get the status code which is set by fasthttp
-	fsStatus := c.fasthttp.Response.StatusCode()
-	// Set the status code set by the user if it is different from the fasthttp status code and 200
-	if status != fsStatus && status != StatusOK {
-		c.Status(status)
-	}
-	// Check for error
-	if status != StatusNotFound && fsStatus == StatusNotFound {
-		return NewError(StatusNotFound, fmt.Sprintf("sendfile: file %s not found", filename))
-	}
-	return nil
+	return c.res.SendFile(file, compress...)
 }
 
-// SendStatus sets the HTTP status code and if the response body is empty,
-// it sets the correct status message in the body.
+// SendStatus is an alias of [Response.SendStatus].
 func (c *DefaultCtx) SendStatus(status int) error {
-	c.Status(status)
-
-	// Only set status body when there is no response body
-	if len(c.fasthttp.Response.Body()) == 0 {
-		return c.SendString(utils.StatusMessage(status))
-	}
-
-	return nil
+	return c.res.SendStatus(status)
 }
 
-// SendString sets the HTTP response body for string types.
-// This means no type assertion, recommended for faster performance
+// SendString is an alias of [Response.SendString].
 func (c *DefaultCtx) SendString(body string) error {
-	c.fasthttp.Response.SetBodyString(body)
-
-	return nil
+	return c.res.SendString(body)
 }
 
 // SendStream sets response body stream and optional body size.
@@ -1018,30 +652,14 @@ func (c *DefaultCtx) SendStream(stream io.Reader, size ...int) error {
 	return nil
 }
 
-// Set sets the response's HTTP header field to the specified key, value.
+// Set is an alias of [Response.Set].
 func (c *DefaultCtx) Set(key, val string) {
-	c.fasthttp.Response.Header.Set(key, val)
+	c.res.Set(key, val)
 }
 
-func (c *DefaultCtx) setCanonical(key, val string) {
-	c.fasthttp.Response.Header.SetCanonical(utils.UnsafeBytes(key), utils.UnsafeBytes(val))
-}
-
-// Subdomains returns a string slice of subdomains in the domain name of the request.
-// The subdomain offset, which defaults to 2, is used for determining the beginning of the subdomain segments.
+// Subdomains is an alias of [Request.Subdomains].
 func (c *DefaultCtx) Subdomains(offset ...int) []string {
-	o := 2
-	if len(offset) > 0 {
-		o = offset[0]
-	}
-	subdomains := strings.Split(c.Host(), ".")
-	l := len(subdomains) - o
-	// Check index to avoid slice bounds out of range panic
-	if l < 0 {
-		l = len(subdomains)
-	}
-	subdomains = subdomains[:l]
-	return subdomains
+	return c.req.Subdomains(offset...)
 }
 
 // Stale is an alias of [Request.Stale].
@@ -1049,10 +667,10 @@ func (c *DefaultCtx) Stale() bool {
 	return c.req.Stale()
 }
 
-// Status sets the HTTP status for the response.
+// Status is an alias of [Response.Status].
 // This method is chainable.
 func (c *DefaultCtx) Status(status int) Ctx {
-	c.fasthttp.Response.SetStatusCode(status)
+	c.res.Status(status)
 	return c
 }
 
@@ -1095,44 +713,36 @@ func (c *DefaultCtx) String() string {
 	return str
 }
 
-// Type sets the Content-Type HTTP header to the MIME type specified by the file extension.
+// Type is an alias of [Response.Type].
 func (c *DefaultCtx) Type(extension string, charset ...string) Ctx {
-	if len(charset) > 0 {
-		c.fasthttp.Response.Header.SetContentType(utils.GetMIME(extension) + "; charset=" + charset[0])
-	} else {
-		c.fasthttp.Response.Header.SetContentType(utils.GetMIME(extension))
-	}
+	c.res.Type(extension, charset...)
 	return c
 }
 
-// Vary adds the given header field to the Vary response header.
-// This will append the header, if not already listed, otherwise leaves it listed in the current location.
+// Vary is an alias of [Response.Vary].
 func (c *DefaultCtx) Vary(fields ...string) {
 	c.Append(HeaderVary, fields...)
 }
 
-// Write appends p into response body.
+// Write is an alias of [Response.Write].
 func (c *DefaultCtx) Write(p []byte) (int, error) {
 	c.fasthttp.Response.AppendBody(p)
 	return len(p), nil
 }
 
-// Writef appends f & a into response body writer.
+// Writef is an alias of [Response.Writef].
 func (c *DefaultCtx) Writef(f string, a ...any) (int, error) {
-	//nolint:wrapcheck // This must not be wrapped
-	return fmt.Fprintf(c.fasthttp.Response.BodyWriter(), f, a...)
+	return c.res.Writef(f, a...)
 }
 
-// WriteString appends s to response body.
+// WriteString is an alias of [Response.WriteString].
 func (c *DefaultCtx) WriteString(s string) (int, error) {
-	c.fasthttp.Response.AppendBodyString(s)
-	return len(s), nil
+	return c.res.WriteString(s)
 }
 
-// XHR returns a Boolean property, that is true, if the request's X-Requested-With header field is XMLHttpRequest,
-// indicating that the request was issued by a client library (such as jQuery).
+// XHR is an alis of [Request.XHR].
 func (c *DefaultCtx) XHR() bool {
-	return utils.EqualFold(c.app.getBytes(c.Get(HeaderXRequestedWith)), []byte("xmlhttprequest"))
+	return c.req.XHR()
 }
 
 // IsProxyTrusted checks trustworthiness of remote ip.

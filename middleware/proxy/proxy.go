@@ -65,7 +65,7 @@ func Balancer(config Config) fiber.Handler {
 
 		// Set request and response
 		req := &c.Context().Request
-		res := c.Response()
+		res := &c.Context().Response
 
 		// Don't proxy "Connection" header
 		req.Header.Del(fiber.HeaderConnection)
@@ -173,7 +173,7 @@ func doAction(
 	}
 
 	req := &c.Context().Request
-	res := c.Response()
+	res := &c.Context().Response
 	originalURL := utils.CopyString(c.OriginalURL())
 	defer req.SetRequestURI(originalURL)
 

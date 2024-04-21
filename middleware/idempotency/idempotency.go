@@ -117,9 +117,9 @@ func New(config ...Config) fiber.Handler {
 
 		// Construct response
 		res := &response{
-			StatusCode: c.Response().StatusCode(),
+			StatusCode: c.Context().Response.StatusCode(),
 
-			Body: utils.CopyBytes(c.Response().Body()),
+			Body: utils.CopyBytes(c.Context().Response.Body()),
 		}
 		{
 			headers := make(map[string][]string)

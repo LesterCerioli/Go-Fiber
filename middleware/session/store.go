@@ -123,7 +123,7 @@ func (s *Store) getSessionID(c fiber.Ctx) string {
 
 func (s *Store) responseCookies(c fiber.Ctx) (string, error) {
 	// Get key from response cookie
-	cookieValue := c.Response().Header.PeekCookie(s.sessionName)
+	cookieValue := c.Context().Response.Header.PeekCookie(s.sessionName)
 	if len(cookieValue) == 0 {
 		return "", nil
 	}

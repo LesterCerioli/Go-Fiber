@@ -135,14 +135,14 @@ func New(config ...Config) fiber.Handler {
 				e.body = manager.getRaw(key + "_body")
 			}
 			// Set response headers from cache
-			c.Response().SetBodyRaw(e.body)
-			c.Response().SetStatusCode(e.status)
-			c.Response().Header.SetContentTypeBytes(e.ctype)
+			c.Context().Response.SetBodyRaw(e.body)
+			c.Context().Response.SetStatusCode(e.status)
+			c.Context().Response.Header.SetContentTypeBytes(e.ctype)
 			if len(e.cencoding) > 0 {
-				c.Response().Header.SetBytesV(fiber.HeaderContentEncoding, e.cencoding)
+				c.Context().Response.Header.SetBytesV(fiber.HeaderContentEncoding, e.cencoding)
 			}
 			for k, v := range e.headers {
-				c.Response().Header.SetBytesV(k, v)
+				c.Context().Response.Header.SetBytesV(k, v)
 			}
 			// Set Cache-Control header if enabled
 			if cfg.CacheControl {
@@ -177,7 +177,7 @@ func New(config ...Config) fiber.Handler {
 		}
 
 		// Don't try to cache if body won't fit into cache
-		bodySize := uint(len(c.Response().Body()))
+		bodySize := uint(len(c.Context().Response.Body()))
 		if cfg.MaxBytes > 0 && bodySize > cfg.MaxBytes {
 			c.Set(cfg.CacheHeader, cacheUnreachable)
 			return nil
@@ -193,16 +193,16 @@ func New(config ...Config) fiber.Handler {
 		}
 
 		// Cache response
-		e.body = utils.CopyBytes(c.Response().Body())
-		e.status = c.Response().StatusCode()
-		e.ctype = utils.CopyBytes(c.Response().Header.ContentType())
-		e.cencoding = utils.CopyBytes(c.Response().Header.Peek(fiber.HeaderContentEncoding))
+		e.body = utils.CopyBytes(c.Context().Response.Body())
+		e.status = c.Context().Response.StatusCode()
+		e.ctype = utils.CopyBytes(c.Context().Response.Header.ContentType())
+		e.cencoding = utils.CopyBytes(c.Context().Response.Header.Peek(fiber.HeaderContentEncoding))
 
 		// Store all response headers
 		// (more: https://datatracker.ietf.org/doc/html/rfc2616#section-13.5.1)
 		if cfg.StoreResponseHeaders {
 			e.headers = make(map[string][]byte)
-			c.Response().Header.VisitAll(
+			c.Context().Response.Header.VisitAll(
 				func(key, value []byte) {
 					// create real copy
 					keyS := string(key)

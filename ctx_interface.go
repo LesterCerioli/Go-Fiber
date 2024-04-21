@@ -90,10 +90,9 @@ type Ctx interface {
 	// To access the underlying fasthttp request object, use [Ctx.Context].
 	Req() *Request
 
-	// Response return the *fasthttp.Response object
-	// This allows you to use all fasthttp response methods
-	// https://godoc.org/github.com/valyala/fasthttp#Response
-	Response() *fasthttp.Response
+	// Res returns the [Response] object for the current request context.
+	// To access the underlying fasthttp response object, use [Ctx.Context].
+	Res() *Response
 
 	// Format performs content-negotiation on the Accept HTTP header.
 	// It uses Accepts to select a proper format and calls the matching
@@ -131,6 +130,7 @@ type Ctx interface {
 	// Field names are case-insensitive
 	// Returned value is only valid within the handler. Do not store any references.
 	// Make copies or use the Immutable setting instead.
+	// Deprecated: Use c.Res().Get()
 	GetRespHeader(key string, defaultValue ...string) string
 
 	// GetRespHeaders returns the HTTP response headers.
@@ -410,8 +410,12 @@ func NewDefaultCtx(app *App) *DefaultCtx {
 		req: Request{
 			app: app,
 		},
+		res: Response{
+			app: app,
+		},
 	}
 	ctx.req.ctx = ctx
+	ctx.res.ctx = ctx
 	return ctx
 }
 
@@ -457,6 +461,7 @@ func (c *DefaultCtx) Reset(fctx *fasthttp.RequestCtx) {
 	// Attach *fasthttp.RequestCtx to ctx
 	c.fasthttp = fctx
 	c.req.fasthttp = &fctx.Request
+	c.res.fasthttp = &fctx.Response
 	// Set method
 	c.req.method = c.app.getString(fctx.Request.Header.Method())
 	c.req.methodINT = c.app.methodInt(c.req.method)
@@ -471,8 +476,7 @@ func (c *DefaultCtx) release() {
 	c.req.route = nil
 	c.fasthttp = nil
 	c.bind = nil
-	c.redirectionMessages = c.redirectionMessages[:0]
-	c.viewBindMap = sync.Map{}
+	c.res.viewBindMap = sync.Map{}
 	if c.redirect != nil {
 		ReleaseRedirect(c.redirect)
 		c.redirect = nil

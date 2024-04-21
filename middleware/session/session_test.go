@@ -337,8 +337,8 @@ func Test_Session_Save(t *testing.T) {
 		// save session
 		err = sess.Save()
 		require.NoError(t, err)
-		require.Equal(t, store.getSessionID(ctx), string(ctx.Response().Header.Peek(store.sessionName)))
-		require.Equal(t, store.getSessionID(ctx), ctx.Get(store.sessionName))
+		require.Equal(t, store.getSessionID(ctx), ctx.Res().Get(store.sessionName))
+		require.Equal(t, store.getSessionID(ctx), ctx.Req().Get(store.sessionName))
 	})
 }
 
@@ -434,8 +434,8 @@ func Test_Session_Destroy(t *testing.T) {
 
 		err = sess.Destroy()
 		require.NoError(t, err)
-		require.Equal(t, "", string(ctx.Response().Header.Peek(store.sessionName)))
-		require.Equal(t, "", ctx.Get(store.sessionName))
+		require.Equal(t, "", ctx.Res().Get(store.sessionName))
+		require.Equal(t, "", ctx.Req().Get(store.sessionName))
 	})
 }
 
@@ -468,7 +468,7 @@ func Test_Session_Cookie(t *testing.T) {
 	require.NoError(t, sess.Save())
 
 	// cookie should be set on Save ( even if empty data )
-	require.Len(t, ctx.Response().Header.PeekCookie(store.sessionName), 84)
+	require.Len(t, ctx.Context().Response.Header.PeekCookie(store.sessionName), 84)
 }
 
 // go test -run Test_Session_Cookie_In_Response
@@ -585,8 +585,8 @@ func Test_Session_Reset(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that the session id is not in the header or cookie anymore
-		require.Equal(t, "", string(ctx.Response().Header.Peek(store.sessionName)))
-		require.Equal(t, "", ctx.Get(store.sessionName))
+		require.Equal(t, "", ctx.Res().Get(store.sessionName))
+		require.Equal(t, "", ctx.Req().Get(store.sessionName))
 	})
 }
 
