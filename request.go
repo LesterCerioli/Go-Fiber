@@ -2,7 +2,11 @@ package fiber
 
 import (
 	"bytes"
+	"errors"
+	"mime/multipart"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/utils/v2"
@@ -210,6 +214,15 @@ func (r *Request) Hostname() string {
 	return addr
 }
 
+// Port returns the remote port of the request.
+func (r *Request) Port() string {
+	tcpaddr, ok := r.ctx.Context().RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		panic(errors.New("failed to type-assert to *net.TCPAddr"))
+	}
+	return strconv.Itoa(tcpaddr.Port)
+}
+
 // IP returns the remote IP address of the request.
 // If ProxyHeader and IP Validation is configured, it will parse that header and return the first valid IP address.
 // Please use Config.EnableTrustedProxyCheck to prevent header spoofing, in case when your app is behind the proxy.
@@ -352,6 +365,23 @@ func (r *Request) Is(extension string) bool {
 		strings.TrimLeft(utils.UnsafeString(r.fasthttp.Header.ContentType()), " "),
 		extensionHeader,
 	)
+}
+
+var localHosts = [...]string{"127.0.0.1", "::1"}
+
+// IsLocalHost will return true if address is a localhost address.
+func isLocalHost(address string) bool {
+	for _, h := range localHosts {
+		if address == h {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFromLocal will return true if request came from local.
+func (r *Request) IsFromLocal() bool {
+	return isLocalHost(r.ctx.Context().RemoteIP().String())
 }
 
 // BodyRaw contains the raw body submitted in a POST request.
@@ -557,6 +587,12 @@ func (r *Request) Subdomains(offset ...int) []string {
 // indicating that the request was issued by a client library (such as jQuery).
 func (r *Request) XHR() bool {
 	return utils.EqualFold(r.fasthttp.Header.Peek(HeaderXRequestedWith), []byte("xmlhttprequest"))
+}
+
+// MultipartForm parse form entries from binary.
+// This returns a map[string][]string, so given a key the value will be a string slice.
+func (r *Request) MultipartForm() (*multipart.Form, error) {
+	return r.fasthttp.MultipartForm()
 }
 
 // Params is used to get the route parameters.

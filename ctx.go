@@ -7,11 +7,9 @@ package fiber
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"strconv"
 	"time"
 
@@ -313,13 +311,9 @@ func (c *DefaultCtx) Hostname() string {
 	return c.req.Hostname()
 }
 
-// Port returns the remote port of the request.
+// Port is an alias of [Request.Port].
 func (c *DefaultCtx) Port() string {
-	tcpaddr, ok := c.fasthttp.RemoteAddr().(*net.TCPAddr)
-	if !ok {
-		panic(errors.New("failed to type-assert to *net.TCPAddr"))
-	}
-	return strconv.Itoa(tcpaddr.Port)
+	return c.req.Port()
 }
 
 // IP is an alias of [Request.IP].
@@ -393,10 +387,9 @@ func (c *DefaultCtx) Method(override ...string) string {
 	return c.req.Method(override...)
 }
 
-// MultipartForm parse form entries from binary.
-// This returns a map[string][]string, so given a key the value will be a string slice.
+// MultipartForm is an alias of [Request.MultipartForm].
 func (c *DefaultCtx) MultipartForm() (*multipart.Form, error) {
-	return c.fasthttp.MultipartForm()
+	return c.req.MultipartForm()
 }
 
 // ClientHelloInfo return CHI from context
@@ -768,21 +761,9 @@ func (c *DefaultCtx) IsProxyTrusted() bool {
 	return false
 }
 
-var localHosts = [...]string{"127.0.0.1", "::1"}
-
-// IsLocalHost will return true if address is a localhost address.
-func (*DefaultCtx) isLocalHost(address string) bool {
-	for _, h := range localHosts {
-		if address == h {
-			return true
-		}
-	}
-	return false
-}
-
 // IsFromLocal will return true if request came from local.
 func (c *DefaultCtx) IsFromLocal() bool {
-	return c.isLocalHost(c.fasthttp.RemoteIP().String())
+	return c.req.IsFromLocal()
 }
 
 // Bind You can bind body, cookie, headers etc. into the map, map slice, struct easily by using Binding method.
