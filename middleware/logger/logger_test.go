@@ -115,7 +115,7 @@ func Test_Logger_Done(t *testing.T) {
 
 	app.Use(New(Config{
 		Done: func(c fiber.Ctx, logString []byte) {
-			if c.Response().StatusCode() == fiber.StatusOK {
+			if c.Context().Response.StatusCode() == fiber.StatusOK {
 				_, err := buf.Write(logString)
 				require.NoError(t, err)
 			}

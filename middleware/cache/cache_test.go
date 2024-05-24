@@ -442,7 +442,7 @@ func Test_Cache_CustomNext(t *testing.T) {
 
 	app.Use(New(Config{
 		Next: func(c fiber.Ctx) bool {
-			return c.Response().StatusCode() != fiber.StatusOK
+			return c.Context().Response.StatusCode() != fiber.StatusOK
 		},
 		CacheControl: true,
 	}))
@@ -509,7 +509,7 @@ func Test_CustomExpiration(t *testing.T) {
 	}}))
 
 	app.Get("/", func(c fiber.Ctx) error {
-		c.Response().Header.Add("Cache-Time", "1")
+		c.Set("Cache-Time", "1")
 		return c.SendString(strconv.FormatInt(time.Now().UnixNano(), 10))
 	})
 
@@ -553,7 +553,7 @@ func Test_AdditionalE2EResponseHeaders(t *testing.T) {
 	}))
 
 	app.Get("/", func(c fiber.Ctx) error {
-		c.Response().Header.Add("X-Foobar", "foobar")
+		c.Set("X-Foobar", "foobar")
 		return c.SendString("hi")
 	})
 
@@ -576,7 +576,7 @@ func Test_CacheHeader(t *testing.T) {
 	app.Use(New(Config{
 		Expiration: 10 * time.Second,
 		Next: func(c fiber.Ctx) bool {
-			return c.Response().StatusCode() != fiber.StatusOK
+			return c.Context().Response.StatusCode() != fiber.StatusOK
 		},
 	}))
 
@@ -843,7 +843,7 @@ func Benchmark_Cache_AdditionalHeaders(b *testing.B) {
 	}))
 
 	app.Get("/demo", func(c fiber.Ctx) error {
-		c.Response().Header.Add("X-Foobar", "foobar")
+		c.Set("X-Foobar", "foobar")
 		return c.SendStatus(418)
 	})
 

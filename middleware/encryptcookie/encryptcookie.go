@@ -18,14 +18,14 @@ func New(config ...Config) fiber.Handler {
 		}
 
 		// Decrypt request cookies
-		c.Request().Header.VisitAllCookie(func(key, value []byte) {
+		c.Context().Request.Header.VisitAllCookie(func(key, value []byte) {
 			keyString := string(key)
 			if !isDisabled(keyString, cfg.Except) {
 				decryptedValue, err := cfg.Decryptor(string(value), cfg.Key)
 				if err != nil {
-					c.Request().Header.SetCookieBytesKV(key, nil)
+					c.Context().Request.Header.SetCookieBytesKV(key, nil)
 				} else {
-					c.Request().Header.SetCookie(string(key), decryptedValue)
+					c.Context().Request.Header.SetCookie(string(key), decryptedValue)
 				}
 			}
 		})
@@ -34,19 +34,19 @@ func New(config ...Config) fiber.Handler {
 		err := c.Next()
 
 		// Encrypt response cookies
-		c.Response().Header.VisitAllCookie(func(key, _ []byte) {
+		c.Context().Response.Header.VisitAllCookie(func(key, _ []byte) {
 			keyString := string(key)
 			if !isDisabled(keyString, cfg.Except) {
 				cookieValue := fasthttp.Cookie{}
 				cookieValue.SetKeyBytes(key)
-				if c.Response().Header.Cookie(&cookieValue) {
+				if c.Context().Response.Header.Cookie(&cookieValue) {
 					encryptedValue, err := cfg.Encryptor(string(cookieValue.Value()), cfg.Key)
 					if err != nil {
 						panic(err)
 					}
 
 					cookieValue.SetValue(encryptedValue)
-					c.Response().Header.SetCookie(&cookieValue)
+					c.Context().Response.Header.SetCookie(&cookieValue)
 				}
 			}
 		})

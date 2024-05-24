@@ -76,7 +76,7 @@ func (b *Bind) Custom(name string, dest any) error {
 
 // Header binds the request header strings into the struct, map[string]string and map[string][]string.
 func (b *Bind) Header(out any) error {
-	if err := b.returnErr(binder.HeaderBinder.Bind(b.ctx.Request(), out)); err != nil {
+	if err := b.returnErr(binder.HeaderBinder.Bind(&b.ctx.Context().Request, out)); err != nil {
 		return err
 	}
 
@@ -85,7 +85,7 @@ func (b *Bind) Header(out any) error {
 
 // RespHeader binds the response header strings into the struct, map[string]string and map[string][]string.
 func (b *Bind) RespHeader(out any) error {
-	if err := b.returnErr(binder.RespHeaderBinder.Bind(b.ctx.Response(), out)); err != nil {
+	if err := b.returnErr(binder.RespHeaderBinder.Bind(&b.ctx.Context().Response, out)); err != nil {
 		return err
 	}
 

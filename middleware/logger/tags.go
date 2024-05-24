@@ -87,19 +87,19 @@ func createTagMap(cfg *Config) map[string]LogFunc {
 			return output.Write(c.Body())
 		},
 		TagBytesReceived: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
-			return appendInt(output, len(c.Request().Body()))
+			return appendInt(output, len(c.Req().Body()))
 		},
 		TagBytesSent: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
-			if c.Response().Header.ContentLength() < 0 {
+			if c.Context().Response.Header.ContentLength() < 0 {
 				return appendInt(output, 0)
 			}
-			return appendInt(output, len(c.Response().Body()))
+			return appendInt(output, len(c.Context().Response.Body()))
 		},
 		TagRoute: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
 			return output.WriteString(c.Route().Path)
 		},
 		TagResBody: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
-			return output.Write(c.Response().Body())
+			return output.Write(c.Context().Response.Body())
 		},
 		TagReqHeaders: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
 			out := make(map[string][]string, 0)
@@ -114,7 +114,7 @@ func createTagMap(cfg *Config) map[string]LogFunc {
 			return output.Write([]byte(strings.Join(reqHeaders, "&")))
 		},
 		TagQueryStringParams: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
-			return output.WriteString(c.Request().URI().QueryArgs().String())
+			return output.WriteString(c.Context().URI().QueryArgs().String())
 		},
 
 		TagBlack: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
@@ -184,9 +184,9 @@ func createTagMap(cfg *Config) map[string]LogFunc {
 		TagStatus: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
 			if cfg.enableColors {
 				colors := c.App().Config().ColorScheme
-				return output.WriteString(fmt.Sprintf("%s%3d%s", statusColor(c.Response().StatusCode(), colors), c.Response().StatusCode(), colors.Reset))
+				return output.WriteString(fmt.Sprintf("%s%3d%s", statusColor(c.Context().Response.StatusCode(), colors), c.Context().Response.StatusCode(), colors.Reset))
 			}
-			return appendInt(output, c.Response().StatusCode())
+			return appendInt(output, c.Context().Response.StatusCode())
 		},
 		TagMethod: func(output Buffer, c fiber.Ctx, _ *Data, _ string) (int, error) {
 			if cfg.enableColors {

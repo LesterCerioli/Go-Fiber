@@ -37,8 +37,9 @@ type Redirect struct {
 	c      *DefaultCtx // Embed ctx
 	status int         // Status code of redirection. Default: StatusFound
 
-	messages []string          // Flash messages
-	oldInput map[string]string // Old input data
+	messages            []string          // Flash messages
+	redirectionMessages []string          // Messages of the previous redirect
+	oldInput            map[string]string // Old input data
 }
 
 // RedirectConfig A config to use with Redirect().Route()
@@ -71,6 +72,7 @@ func ReleaseRedirect(r *Redirect) {
 func (r *Redirect) release() {
 	r.status = 302
 	r.messages = r.messages[:0]
+	r.redirectionMessages = r.redirectionMessages[:0]
 	// reset map
 	for k := range r.oldInput {
 		delete(r.oldInput, k)
@@ -119,7 +121,7 @@ func (r *Redirect) WithInput() *Redirect {
 
 // Messages Get flash messages.
 func (r *Redirect) Messages() map[string]string {
-	msgs := r.c.redirectionMessages
+	msgs := r.redirectionMessages
 	flashMessages := make(map[string]string, len(msgs))
 
 	for _, msg := range msgs {
@@ -135,7 +137,7 @@ func (r *Redirect) Messages() map[string]string {
 
 // Message Get flash message by key.
 func (r *Redirect) Message(key string) string {
-	msgs := r.c.redirectionMessages
+	msgs := r.redirectionMessages
 
 	for _, msg := range msgs {
 		k, v := parseMessage(msg)
@@ -149,7 +151,7 @@ func (r *Redirect) Message(key string) string {
 
 // OldInputs Get old input data.
 func (r *Redirect) OldInputs() map[string]string {
-	msgs := r.c.redirectionMessages
+	msgs := r.redirectionMessages
 	oldInputs := make(map[string]string, len(msgs))
 
 	for _, msg := range msgs {
@@ -165,7 +167,7 @@ func (r *Redirect) OldInputs() map[string]string {
 
 // OldInput Get old input data by key.
 func (r *Redirect) OldInput(key string) string {
-	msgs := r.c.redirectionMessages
+	msgs := r.redirectionMessages
 
 	for _, msg := range msgs {
 		k, v := parseMessage(msg)
@@ -179,7 +181,7 @@ func (r *Redirect) OldInput(key string) string {
 
 // To redirect to the URL derived from the specified path, with specified status.
 func (r *Redirect) To(location string) error {
-	r.c.setCanonical(HeaderLocation, location)
+	r.c.res.setCanonical(HeaderLocation, location)
 	r.c.Status(r.status)
 
 	return nil
@@ -279,10 +281,10 @@ func (r *Redirect) setFlash() {
 	for {
 		commaPos = findNextNonEscapedCharsetPosition(cookieValue, []byte(CookieDataSeparator))
 		if commaPos == -1 {
-			r.c.redirectionMessages = append(r.c.redirectionMessages, strings.Trim(cookieValue, " "))
+			r.redirectionMessages = append(r.redirectionMessages, strings.Trim(cookieValue, " "))
 			break
 		}
-		r.c.redirectionMessages = append(r.c.redirectionMessages, strings.Trim(cookieValue[:commaPos], " "))
+		r.redirectionMessages = append(r.redirectionMessages, strings.Trim(cookieValue[:commaPos], " "))
 		cookieValue = cookieValue[commaPos+1:]
 	}
 

@@ -215,8 +215,8 @@ func (s *Session) SetExpiry(exp time.Duration) {
 
 func (s *Session) setSession() {
 	if s.config.source == SourceHeader {
-		s.ctx.Request().Header.SetBytesV(s.config.sessionName, []byte(s.id))
-		s.ctx.Response().Header.SetBytesV(s.config.sessionName, []byte(s.id))
+		s.ctx.Context().Request.Header.SetBytesV(s.config.sessionName, []byte(s.id))
+		s.ctx.Context().Response.Header.SetBytesV(s.config.sessionName, []byte(s.id))
 	} else {
 		fcookie := fasthttp.AcquireCookie()
 		fcookie.SetKey(s.config.sessionName)
@@ -240,18 +240,18 @@ func (s *Session) setSession() {
 		default:
 			fcookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
 		}
-		s.ctx.Response().Header.SetCookie(fcookie)
+		s.ctx.Context().Response.Header.SetCookie(fcookie)
 		fasthttp.ReleaseCookie(fcookie)
 	}
 }
 
 func (s *Session) delSession() {
 	if s.config.source == SourceHeader {
-		s.ctx.Request().Header.Del(s.config.sessionName)
-		s.ctx.Response().Header.Del(s.config.sessionName)
+		s.ctx.Context().Request.Header.Del(s.config.sessionName)
+		s.ctx.Context().Response.Header.Del(s.config.sessionName)
 	} else {
-		s.ctx.Request().Header.DelCookie(s.config.sessionName)
-		s.ctx.Response().Header.DelCookie(s.config.sessionName)
+		s.ctx.Context().Request.Header.DelCookie(s.config.sessionName)
+		s.ctx.Context().Response.Header.DelCookie(s.config.sessionName)
 
 		fcookie := fasthttp.AcquireCookie()
 		fcookie.SetKey(s.config.sessionName)
@@ -271,7 +271,7 @@ func (s *Session) delSession() {
 			fcookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
 		}
 
-		s.ctx.Response().Header.SetCookie(fcookie)
+		s.ctx.Context().Response.Header.SetCookie(fcookie)
 		fasthttp.ReleaseCookie(fcookie)
 	}
 }

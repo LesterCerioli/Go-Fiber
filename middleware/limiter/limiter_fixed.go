@@ -83,8 +83,8 @@ func (FixedWindow) New(cfg Config) fiber.Handler {
 		err := c.Next()
 
 		// Check for SkipFailedRequests and SkipSuccessfulRequests
-		if (cfg.SkipSuccessfulRequests && c.Response().StatusCode() < fiber.StatusBadRequest) ||
-			(cfg.SkipFailedRequests && c.Response().StatusCode() >= fiber.StatusBadRequest) {
+		if (cfg.SkipSuccessfulRequests && c.Context().Response.StatusCode() < fiber.StatusBadRequest) ||
+			(cfg.SkipFailedRequests && c.Context().Response.StatusCode() >= fiber.StatusBadRequest) {
 			// Lock entry
 			mux.Lock()
 			e = manager.get(key)

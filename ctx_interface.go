@@ -86,15 +86,13 @@ type Ctx interface {
 	// Override this default with the filename parameter.
 	Download(file string, filename ...string) error
 
-	// Request return the *fasthttp.Request object
-	// This allows you to use all fasthttp request methods
-	// https://godoc.org/github.com/valyala/fasthttp#Request
-	Request() *fasthttp.Request
+	// Req returns the [Request] object for the current request context.
+	// To access the underlying fasthttp request object, use [Ctx.Context].
+	Req() *Request
 
-	// Response return the *fasthttp.Response object
-	// This allows you to use all fasthttp response methods
-	// https://godoc.org/github.com/valyala/fasthttp#Response
-	Response() *fasthttp.Response
+	// Res returns the [Response] object for the current request context.
+	// To access the underlying fasthttp response object, use [Ctx.Context].
+	Res() *Response
 
 	// Format performs content-negotiation on the Accept HTTP header.
 	// It uses Accepts to select a proper format and calls the matching
@@ -132,6 +130,7 @@ type Ctx interface {
 	// Field names are case-insensitive
 	// Returned value is only valid within the handler. Do not store any references.
 	// Make copies or use the Immutable setting instead.
+	// Deprecated: Use c.Res().Get()
 	GetRespHeader(key string, defaultValue ...string) string
 
 	// GetRespHeaders returns the HTTP response headers.
@@ -405,10 +404,19 @@ type CustomCtx interface {
 
 func NewDefaultCtx(app *App) *DefaultCtx {
 	// return ctx
-	return &DefaultCtx{
+	ctx := &DefaultCtx{
 		// Set app reference
 		app: app,
+		req: Request{
+			app: app,
+		},
+		res: Response{
+			app: app,
+		},
 	}
+	ctx.req.ctx = ctx
+	ctx.res.ctx = ctx
+	return ctx
 }
 
 func (app *App) newCtx() Ctx {
@@ -449,25 +457,26 @@ func (c *DefaultCtx) Reset(fctx *fasthttp.RequestCtx) {
 	// Reset matched flag
 	c.matched = false
 	// Set paths
-	c.pathOriginal = c.app.getString(fctx.URI().PathOriginal())
-	// Set method
-	c.method = c.app.getString(fctx.Request.Header.Method())
-	c.methodINT = c.app.methodInt(c.method)
+	c.req.pathOriginal = c.app.getString(fctx.URI().PathOriginal())
 	// Attach *fasthttp.RequestCtx to ctx
 	c.fasthttp = fctx
+	c.req.fasthttp = &fctx.Request
+	c.res.fasthttp = &fctx.Response
+	// Set method
+	c.req.method = c.app.getString(fctx.Request.Header.Method())
+	c.req.methodINT = c.app.methodInt(c.req.method)
 	// reset base uri
-	c.baseURI = ""
+	c.req.baseURI = ""
 	// Prettify path
-	c.configDependentPaths()
+	c.req.configDependentPaths()
 }
 
 // Release is a method to reset context fields when to use ReleaseCtx()
 func (c *DefaultCtx) release() {
-	c.route = nil
+	c.req.route = nil
 	c.fasthttp = nil
 	c.bind = nil
-	c.redirectionMessages = c.redirectionMessages[:0]
-	c.viewBindMap = sync.Map{}
+	c.res.viewBindMap = sync.Map{}
 	if c.redirect != nil {
 		ReleaseRedirect(c.redirect)
 		c.redirect = nil
@@ -476,7 +485,7 @@ func (c *DefaultCtx) release() {
 
 // Methods to use with next stack.
 func (c *DefaultCtx) getMethodINT() int {
-	return c.methodINT
+	return c.req.methodINT
 }
 
 func (c *DefaultCtx) getIndexRoute() int {
@@ -484,19 +493,19 @@ func (c *DefaultCtx) getIndexRoute() int {
 }
 
 func (c *DefaultCtx) getTreePath() string {
-	return c.treePath
+	return c.req.treePath
 }
 
 func (c *DefaultCtx) getDetectionPath() string {
-	return c.detectionPath
+	return c.req.detectionPath
 }
 
 func (c *DefaultCtx) getPathOriginal() string {
-	return c.pathOriginal
+	return c.req.pathOriginal
 }
 
 func (c *DefaultCtx) getValues() *[maxParams]string {
-	return &c.values
+	return &c.req.values
 }
 
 func (c *DefaultCtx) getMatched() bool {
@@ -516,5 +525,5 @@ func (c *DefaultCtx) setMatched(matched bool) {
 }
 
 func (c *DefaultCtx) setRoute(route *Route) {
-	c.route = route
+	c.req.route = route
 }

@@ -64,8 +64,8 @@ func Balancer(config Config) fiber.Handler {
 		}
 
 		// Set request and response
-		req := c.Request()
-		res := c.Response()
+		req := &c.Context().Request
+		res := &c.Context().Response
 
 		// Don't proxy "Connection" header
 		req.Header.Del(fiber.HeaderConnection)
@@ -172,8 +172,8 @@ func doAction(
 		lock.RUnlock()
 	}
 
-	req := c.Request()
-	res := c.Response()
+	req := &c.Context().Request
+	res := &c.Context().Response
 	originalURL := utils.CopyString(c.OriginalURL())
 	defer req.SetRequestURI(originalURL)
 
@@ -205,7 +205,7 @@ func getScheme(uri []byte) []byte {
 // This method will return an fiber.Handler
 func DomainForward(hostname, addr string, clients ...*fasthttp.Client) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		host := string(c.Request().Host())
+		host := string(c.Context().Host())
 		if host == hostname {
 			return Do(c, addr+c.OriginalURL(), clients...)
 		}
@@ -246,7 +246,7 @@ func BalancerForward(servers []string, clients ...*fasthttp.Client) fiber.Handle
 		if !strings.HasPrefix(server, "http") {
 			server = "http://" + server
 		}
-		c.Request().Header.Add("X-Real-IP", c.IP())
+		c.Context().Request.Header.Add("X-Real-IP", c.IP())
 		return Do(c, server+c.OriginalURL(), clients...)
 	}
 }
