@@ -221,7 +221,6 @@ func Test_Logger_ErrorOutput(t *testing.T) {
 	require.EqualValues(t, 2, *o)
 }
 
-// go test -run Test_Logger_All
 func Test_Logger_All(t *testing.T) {
 	t.Parallel()
 	buf := bytebufferpool.Get()

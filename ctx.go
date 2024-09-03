@@ -51,7 +51,6 @@ type DefaultCtx struct {
 	app                 *App                 // Reference to *App
 	route               *Route               // Reference to *Route
 	fasthttp            *fasthttp.RequestCtx // Reference to *fasthttp.RequestCtx
-	bind                *Bind                // Default bind reference
 	redirect            *Redirect            // Default redirect reference
 	values              [maxParams]string    // Route parameter values
 	viewBindMap         sync.Map             // Default view map to bind template engine
@@ -267,6 +266,19 @@ func (c *DefaultCtx) BaseURL() string {
 	}
 	c.baseURI = c.Scheme() + "://" + c.Host()
 	return c.baseURI
+}
+
+func (c *DefaultCtx) Bind() *Bind {
+	b := binderPool.Get().(*Bind)
+	b.ctx = c
+	return b
+}
+
+func (c *DefaultCtx) Validate(v any) error {
+	if c.app.config.Validator == nil {
+		return NilValidatorError{}
+	}
+	return c.app.config.Validator.Validate(v)
 }
 
 // BodyRaw contains the raw body submitted in a POST request.
@@ -1858,17 +1870,15 @@ func (c *DefaultCtx) IsFromLocal() bool {
 	return c.isLocalHost(c.fasthttp.RemoteIP().String())
 }
 
-// Bind You can bind body, cookie, headers etc. into the map, map slice, struct easily by using Binding method.
-// It gives custom binding support, detailed binding options and more.
-// Replacement of: BodyParser, ParamsParser, GetReqHeaders, GetRespHeaders, AllParams, QueryParser, ReqHeaderParser
-func (c *DefaultCtx) Bind() *Bind {
-	if c.bind == nil {
-		c.bind = &Bind{
-			ctx:    c,
-			should: true,
-		}
+// AllParams Params is used to get all route parameters.
+// Using Params method to get params.
+func (c *DefaultCtx) GetParams() map[string]string {
+	params := make(map[string]string, len(c.route.Params))
+	for _, param := range c.route.Params {
+		params[param] = c.Params(param)
 	}
-	return c.bind
+
+	return params
 }
 
 // Reset is a method to reset context fields by given request when to use server handlers.
@@ -1895,7 +1905,6 @@ func (c *DefaultCtx) Reset(fctx *fasthttp.RequestCtx) {
 func (c *DefaultCtx) release() {
 	c.route = nil
 	c.fasthttp = nil
-	c.bind = nil
 	c.flashMessages = c.flashMessages[:0]
 	c.viewBindMap = sync.Map{}
 	if c.redirect != nil {
