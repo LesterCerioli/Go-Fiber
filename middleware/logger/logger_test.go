@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	fiberlog "github.com/gofiber/fiber/v3/log"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/bytebufferpool"
@@ -179,6 +180,45 @@ func Test_Logger_ErrorTimeZone(t *testing.T) {
 	resp, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/", nil))
 	require.NoError(t, err)
 	require.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+}
+
+type dumbLogger struct {
+	logger fiberlog.AllLogger
+}
+
+func (l *dumbLogger) Write(p []byte) (n int, err error) {
+	l.logger.Error(string(p))
+	return len(p), nil
+}
+
+func LoggerToWriter(customLogger fiberlog.AllLogger) io.Writer {
+	return &dumbLogger{logger: customLogger}
+}
+
+// go test -run Test_Logger_Fiber_Logger
+func Test_Logger_Fiber_Logger(t *testing.T) {
+	t.Parallel()
+	app := fiber.New()
+
+	buf := bytebufferpool.Get()
+	defer bytebufferpool.Put(buf)
+
+	logger := fiberlog.DefaultLogger()
+	logger.SetFlags(0)
+	logger.SetOutput(buf)
+	app.Use(New(Config{
+		Format: "${error}",
+		Output: LoggerToWriter(logger),
+	}))
+
+	app.Get("/", func(_ fiber.Ctx) error {
+		return errors.New("some random error")
+	})
+
+	resp, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/", nil))
+	require.NoError(t, err)
+	require.Equal(t, fiber.StatusInternalServerError, resp.StatusCode)
+	require.Equal(t, "[Error] some random error\n", buf.String())
 }
 
 type fakeErrorOutput int
@@ -729,6 +769,19 @@ func Benchmark_Logger(b *testing.B) {
 		benchmarkSetup(bb, app, "/")
 	})
 
+	b.Run("DefaultFormatWithFiberLog", func(bb *testing.B) {
+		app := fiber.New()
+		logger := fiberlog.DefaultLogger()
+		logger.SetOutput(io.Discard)
+		app.Use(New(Config{
+			Output: LoggerToWriter(logger),
+		}))
+		app.Get("/", func(c fiber.Ctx) error {
+			return c.SendString("Hello, World!")
+		})
+		benchmarkSetup(bb, app, "/")
+	})
+
 	b.Run("WithTagParameter", func(bb *testing.B) {
 		app := fiber.New()
 		app.Use(New(Config{
@@ -865,6 +918,19 @@ func Benchmark_Logger_Parallel(b *testing.B) {
 		app := fiber.New()
 		app.Use(New(Config{
 			Output: io.Discard,
+		}))
+		app.Get("/", func(c fiber.Ctx) error {
+			return c.SendString("Hello, World!")
+		})
+		benchmarkSetupParallel(bb, app, "/")
+	})
+
+	b.Run("DefaultFormatWithFiberLog", func(bb *testing.B) {
+		app := fiber.New()
+		logger := fiberlog.DefaultLogger()
+		logger.SetOutput(io.Discard)
+		app.Use(New(Config{
+			Output: LoggerToWriter(logger),
 		}))
 		app.Get("/", func(c fiber.Ctx) error {
 			return c.SendString("Hello, World!")

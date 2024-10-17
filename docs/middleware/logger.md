@@ -88,6 +88,33 @@ app.Use(logger.New(logger.Config{
 app.Use(logger.New(logger.Config{
     DisableColors: true,
 }))
+
+// Use Custom Logger with Fiber Logger Interface
+type dumbLogger struct {
+	logger fiberlog.AllLogger
+    level  log.Level
+}
+
+func (l *dumbLogger) Write(p []byte) (n int, err error) {
+	switch l.level {
+	case log.LevelDebug:
+		l.logger.Debug(string(p))
+	case log.LevelError:
+		l.logger.Error(string(p))
+    }
+	return len(p), nil
+}
+
+func LoggerToWriter(customLogger fiberlog.AllLogger, level fiberlog.Level) io.Writer {
+	return &dumbLogger{
+        logger: customLogger,
+        level: level,
+    }
+}
+
+app.Use(logger.New(logger.Config{
+    Output:     LoggerToWriter(fiberlog.DefaultLogger(), fiberlog.LevelError),
+}))
 ```
 
 :::tip
@@ -108,6 +135,7 @@ Writing to os.File is goroutine-safe, but if you are using a custom Output that 
 | TimeZone         | `string`                   | TimeZone can be specified, such as "UTC" and "America/New_York" and "Asia/Chongqing", etc                                        | `"Local"`                                                             |
 | TimeInterval     | `time.Duration`            | TimeInterval is the delay before the timestamp is updated.                                                                       | `500 * time.Millisecond`                                              |
 | Output           | `io.Writer`                | Output is a writer where logs are written.                                                                                       | `os.Stdout`                                                           |
+| LoggerFunc           | `func(c fiber.Ctx, data *Data, cfg Config) error`  | You can use custom loggers with Fiber by using this field. This field is really useful if you're using Zerolog, Zap, Logrus, apex/log etc. If you don't define anything for this field, it'll use the default logger of Fiber.  | `see default_logger.go defaultLoggerInstance`                                                           |                                           |
 | DisableColors    | `bool`                     | DisableColors defines if the logs output should be colorized.                                                                    | `false`                                                               |
 | enableColors     | `bool`                     | Internal field for enabling colors in the log output. (This is not a user-configurable field)                                    | -                                                                     |
 | enableLatency    | `bool`                     | Internal field for enabling latency measurement in logs. (This is not a user-configurable field)                                 | -                                                                     |
